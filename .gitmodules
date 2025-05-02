@@ -1,0 +1,3 @@
+[submodule "csrc/3rdparty/open-gpu-kernel-modules"]
+	path = csrc/3rdparty/open-gpu-kernel-modules
+	url = https://github.com/ivanium/open-gpu-kernel-modules.git
