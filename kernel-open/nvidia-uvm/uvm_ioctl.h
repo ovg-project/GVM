@@ -1141,6 +1141,15 @@ typedef struct
             NvBool bManualTimeout;        // IN
             NvU32  timeoutUs;             // IN
         } NVA06C_CTRL_CMD_PREEMPT;
+        struct {
+            NvBool bEnable;               // IN
+            NvBool bSkipSubmit;           // IN
+            NvBool bSkipEnable;           // IN
+        } NVA06F_CTRL_GPFIFO_SCHEDULE_PARAMS;
+        struct {
+            NvBool bForceRestart;
+            NvBool bBypassWait;
+        } NVA06F_CTRL_RESTART_RUNLIST_PARAMS;
     } data;
     NvU32           dataSize;             // IN
     NV_STATUS       rmStatus;             // OUT
