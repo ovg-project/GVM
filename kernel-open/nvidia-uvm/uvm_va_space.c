@@ -190,6 +190,8 @@ NV_STATUS uvm_va_space_create(struct address_space *mapping, uvm_va_space_t **va
         return NV_ERR_INVALID_ARGUMENT;
     }
 
+    memset(va_space->gmemcghigh, 0xFF, sizeof(size_t) * UVM_ID_MAX_GPUS);
+
     uvm_init_rwsem(&va_space->lock, UVM_LOCK_ORDER_VA_SPACE);
     uvm_mutex_init(&va_space->closest_processors.mask_mutex, UVM_LOCK_ORDER_LEAF);
     uvm_mutex_init(&va_space->serialize_writers_lock, UVM_LOCK_ORDER_VA_SPACE_SERIALIZE_WRITERS);

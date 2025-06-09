@@ -611,6 +611,8 @@ NV_STATUS uvm_va_block_create(uvm_va_range_managed_t *managed_range,
 // to 0. Do not call directly.
 void uvm_va_block_destroy(nv_kref_t *kref);
 
+NV_STATUS try_charge_gpu_memcg(uvm_va_space_t *va_space);
+
 static inline void uvm_va_block_retain(uvm_va_block_t *va_block)
 {
     nv_kref_get(&va_block->kref);
