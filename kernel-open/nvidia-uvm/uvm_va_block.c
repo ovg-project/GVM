@@ -2166,6 +2166,9 @@ static NV_STATUS block_alloc_gpu_chunk(uvm_va_block_t *block,
 {
     NV_STATUS status = NV_OK;
     uvm_va_space_t *va_space = uvm_va_block_get_va_space_maybe_dead(block);
+    size_t rss = va_space_calculate_rss(va_space, gpu);
+    size_t gmemcghigh = va_space->gmemcghigh[uvm_id_gpu_index(gpu->id)];
+    uvm_pmm_alloc_flags_t evict_flags = UVM_PMM_ALLOC_FLAGS_EVICT;
     uvm_gpu_chunk_t *gpu_chunk;
 
     // First try getting a free chunk from previously-made allocations.
@@ -2175,6 +2178,10 @@ static NV_STATUS block_alloc_gpu_chunk(uvm_va_block_t *block,
         if (block_test && block_test->user_pages_allocation_retry_force_count > 0) {
             // Force eviction by pretending the allocation failed with no memory
             --block_test->user_pages_allocation_retry_force_count;
+            status = NV_ERR_NO_MEMORY;
+        }
+        else if (rss > gmemcghigh) {
+            // evict_flags |= UVM_PMM_ALLOC_FLAGS_EVICT_FORCE;
             status = NV_ERR_NO_MEMORY;
         }
         else {
@@ -2188,7 +2195,7 @@ static NV_STATUS block_alloc_gpu_chunk(uvm_va_block_t *block,
             // be restarted.
             uvm_mutex_unlock(&block->lock);
 
-            status = uvm_pmm_gpu_alloc_user(&gpu->pmm, 1, size, UVM_PMM_ALLOC_FLAGS_EVICT, &gpu_chunk, &retry->tracker);
+            status = uvm_pmm_gpu_alloc_user(&gpu->pmm, 1, size, evict_flags, &gpu_chunk, &retry->tracker);
             if (status == NV_OK) {
                 block_retry_add_free_chunk(retry, gpu_chunk);
                 status = NV_ERR_MORE_PROCESSING_REQUIRED;
@@ -2203,7 +2210,8 @@ static NV_STATUS block_alloc_gpu_chunk(uvm_va_block_t *block,
     }
 
     *out_gpu_chunk = gpu_chunk;
-    return try_charge_gpu_memcg(va_space);
+    return NV_OK;
+    // return try_charge_gpu_memcg(va_space);
 }
 
 static bool block_gpu_has_page_tables(uvm_va_block_t *block, uvm_gpu_t *gpu)

@@ -154,7 +154,9 @@ typedef enum
     // Do not use batching in this call if PMA page allocation is required
     UVM_PMM_ALLOC_FLAGS_DONT_BATCH = (1 << 1),
 
-    UVM_PMM_ALLOC_FLAGS_MASK = (1 << 2) - 1
+    UVM_PMM_ALLOC_FLAGS_EVICT_FORCE = (1 << 2),
+
+    UVM_PMM_ALLOC_FLAGS_MASK = (1 << 3) - 1
 } uvm_pmm_alloc_flags_t;
 
 typedef enum

@@ -1690,7 +1690,7 @@ static NV_STATUS alloc_or_evict_root_chunk_unlocked(uvm_pmm_gpu_t *pmm,
     NV_STATUS status;
     uvm_gpu_chunk_t *chunk;
 
-    status = alloc_root_chunk(pmm, type, flags, &chunk);
+    status = (flags & UVM_PMM_ALLOC_FLAGS_EVICT_FORCE) ? NV_ERR_NO_MEMORY : alloc_root_chunk(pmm, type, flags, &chunk);
     if (status != NV_OK) {
         if ((flags & UVM_PMM_ALLOC_FLAGS_EVICT) && uvm_parent_gpu_supports_eviction(gpu->parent)) {
             uvm_mutex_lock(&pmm->lock);
