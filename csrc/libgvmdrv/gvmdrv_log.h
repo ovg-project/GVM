@@ -1,5 +1,5 @@
-#ifndef __LIBGVMDRV_LOG_H__
-#define __LIBGVMDRV_LOG_H__
+#ifndef __GVMDRV_LOG_H__
+#define __GVMDRV_LOG_H__
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,4 +35,4 @@ LogLevel gvmdrv_get_log_level(void);
 
 #endif // __cplusplus
 
-#endif // __LIBGVMDRV_LOG_H__
+#endif // __GVMDRV_LOG_H__

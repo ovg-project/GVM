@@ -1,11 +1,11 @@
 /**
- * @file libgvmdrv_ioctl.h
+ * @file gvmdrv_ioctl.h
  * @brief Low-level IOCTL definitions for the NVIDIA GPU Virtual Memory (UVM)
  * driver with GVM extended functionality.
  */
 
-#ifndef __LIBGVMDRV_IOCTL_H__
-#define __LIBGVMDRV_IOCTL_H__
+#ifndef __GVMDRV_IOCTL_H__
+#define __GVMDRV_IOCTL_H__
 
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -128,4 +128,4 @@ typedef struct {
 }
 #endif
 
-#endif // __LIBGVMDRV_IOCTL_H__
+#endif // __GVMDRV_IOCTL_H__

@@ -1,12 +1,12 @@
 /**
- * @file libgvmdrv.h
+ * @file gvmdrv.h
  * @brief A minimalistic interface set for interacting with the NVIDIA GPU
  * Virtual Memory (UVM) driver with GVM extended functionality. Working with
  * both C and C++ code.
  */
 
-#ifndef __LIBGVMDRV_H__
-#define __LIBGVMDRV_H__
+#ifndef __GVMDRV_H__
+#define __GVMDRV_H__
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,4 +27,4 @@ void gvm_set_gmemcg(int fd, unsigned long long size);
 }
 #endif
 
-#endif // __LIBGVMDRV_H__
+#endif // __GVMDRV_H__
