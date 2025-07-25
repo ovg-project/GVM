@@ -22,6 +22,20 @@ bool MemoryManager::init() {
     return false;
   }
 
+  // Initialize PyTorch retry logic setting
+  const char *retry_env = std::getenv(kPyTorchRetryEnvVar);
+  if (retry_env != nullptr) {
+    std::string retry_val(retry_env);
+    g_pytorch_retry_enabled =
+        (retry_val == "1" || retry_val == "true" || retry_val == "True");
+    std::cout << "[MemoryManager] PyTorch retry logic "
+              << (g_pytorch_retry_enabled ? "enabled" : "disabled")
+              << " via environment variable" << std::endl;
+  } else {
+    std::cout << "[MemoryManager] PyTorch retry logic enabled by default"
+              << std::endl;
+  }
+
   initUVMConnection();
   g_gvm_inited = true;
   return true;
@@ -115,6 +129,10 @@ bool MemoryManager::initUVMConnection() {
 }
 
 bool MemoryManager::canAllocate(size_t size) {
+  if (!g_pytorch_retry_enabled) {
+    return true;
+  }
+
   // Use GVM memory limit if available, otherwise fall back to GPU memory query
   int64_t effective_limit = g_memory_limit;
   if (effective_limit == 0) {

@@ -40,26 +40,7 @@ cudaError_t cudaMalloc(void **devPtr, size_t size) {
   // Initialize memory manager on first call
   if (first_call) {
     first_call = false;
-    std::cout << "[INTERCEPTOR] First cudaMalloc call (size: " << size
-              << " bytes)" << std::endl;
-    std::cout << "[INTERCEPTOR] Replacing cudaMalloc with cudaMallocManaged"
-              << std::endl;
-
-    // // Test basic CUDA operations to ensure everything works
-    // void *tmp_ptr;
-    // cudaError_t ret =
-    //     CUDA_ENTRY_CALL(MallocManaged, &tmp_ptr, 0, cudaMemAttachGlobal);
-    // if (ret != cudaSuccess) {
-    //   std::cerr << "[INTERCEPTOR] Test cudaMallocManaged failed: " << ret
-    //             << std::endl;
-    //   return ret;
-    // }
-    // ret = CUDA_ENTRY_CALL(Free, tmp_ptr);
-    // if (ret != cudaSuccess) {
-    //   std::cerr << "[INTERCEPTOR] Test cudaFree failed: " << ret << std::endl;
-    //   return ret;
-    // }
-    // std::cout << "[INTERCEPTOR] CUDA operations test successful" << std::endl;
+    std::cout << "[INTERCEPTOR] called cudaMalloc." << std::endl;
   }
 
   if (kCallOriginal) {
@@ -68,9 +49,9 @@ cudaError_t cudaMalloc(void **devPtr, size_t size) {
 
   // Check if allocation is allowed (handles retry logic)
   gvm::MemoryManager &memory_mgr = gvm::MemoryManager::getInstance();
-  // if (!memory_mgr.canAllocate(size)) {
-  //   return cudaErrorMemoryAllocation;
-  // }
+  if (!memory_mgr.canAllocate(size)) {
+    return cudaErrorMemoryAllocation;
+  }
 
   // Perform the actual allocation using cudaMallocManaged
   cudaError_t ret =
