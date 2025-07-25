@@ -1,9 +1,11 @@
 #include "memory_manager.h"
 #include "../libgvmdrv/gvmdrv.h"
+#include "cuda_func_caller.h"
 #include <exception>
 #include <iostream>
 #include <string>
 
+namespace gvm {
 MemoryManager &MemoryManager::getInstance() {
   static MemoryManager instance;
   instance.init();
@@ -11,10 +13,10 @@ MemoryManager &MemoryManager::getInstance() {
 }
 
 bool MemoryManager::init() {
-  std::cout << "[MemoryManager] Initializing memory manager" << std::endl;
   if (g_gvm_inited) {
     return true;
   }
+  std::cout << "[MemoryManager] Initializing memory manager" << std::endl;
 
   if (!initMemoryLimit()) {
     return false;
@@ -52,18 +54,60 @@ bool MemoryManager::initMemoryLimit() {
 }
 
 bool MemoryManager::initUVMConnection() {
-  // Initialize UVM connection
-  g_uvm_fd = gvm_find_initialized_uvm();
-  if (g_uvm_fd < 0) {
+  std::cout << "[MemoryManager] Initializing UVM connection..." << std::endl;
+
+  // First, ensure UVM is initialized by triggering CUDA runtime initialization
+  std::cout
+      << "[MemoryManager] Triggering CUDA runtime initialization for UVM..."
+      << std::endl;
+
+  // Get the CUDA function caller instance
+  CudaFuncCaller &cuda_caller = CudaFuncCaller::getInstance();
+  if (!cuda_caller.initialize()) {
+    std::cerr << "[MemoryManager] Failed to initialize CUDA function caller"
+              << std::endl;
+    return false;
+  }
+
+  // Get original cudaMemGetInfo function and call it to trigger UVM
+  // initialization
+  auto original_mem_get_info = cuda_caller.getMemGetInfo();
+  if (original_mem_get_info == nullptr) {
     std::cerr
-        << "[GVM] Failed to find initd UVM, memory limiting may not work"
+        << "[MemoryManager] Could not get original cudaMemGetInfo function"
         << std::endl;
     return false;
   }
 
+  // Call original cudaMemGetInfo to trigger UVM initialization
+  size_t free, total;
+  cudaError_t ret = original_mem_get_info(&free, &total);
+  if (ret != cudaSuccess) {
+    std::cerr << "[MemoryManager] CUDA runtime initialization failed: " << ret
+              << std::endl;
+    return false;
+  }
+
+  std::cout << "[MemoryManager] CUDA runtime initialization successful"
+            << std::endl;
+  std::cout << "[MemoryManager] GPU memory: " << free / (1024 * 1024)
+            << "MB free / " << total / (1024 * 1024) << "MB total" << std::endl;
+
+  // Now look for the CUDA-initialized UVM fd
+  g_uvm_fd = gvm_find_initialized_uvm();
+  if (g_uvm_fd < 0) {
+    std::cerr
+        << "[MemoryManager] No CUDA-initialized UVM found after initialization"
+        << std::endl;
+    return false;
+  }
+
+  std::cout << "[MemoryManager] Found UVM file descriptor: " << g_uvm_fd
+            << std::endl;
+
   // Set the memory limit via libgvmdrv
   gvm_set_gmemcg(g_uvm_fd, g_memory_limit);
-  std::cout << "[GVM] Successfully set GPU memory limit to "
+  std::cout << "[MemoryManager] Successfully set GPU memory limit to "
             << g_memory_limit / (1024LL * 1024LL * 1024LL) << "GB via libgvmdrv"
             << std::endl;
 
@@ -150,3 +194,4 @@ void MemoryManager::getMemoryInfo(size_t *free, size_t *total,
     *free = actual_free;
   }
 }
+} // namespace gvm
