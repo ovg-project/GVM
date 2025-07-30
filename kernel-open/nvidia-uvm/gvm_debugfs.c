@@ -20,18 +20,12 @@ static struct dentry *gvm_debugfs_processes_dir;
 static DEFINE_HASHTABLE(gvm_debugfs_dirs, GVM_DEBUGFS_HASH_BITS);
 static DEFINE_SPINLOCK(gvm_debugfs_lock);
 
-// Process tracking data structures (for debugfs demonstration)
-#define GPU_PROCESS_HASH_BITS 8
-static DEFINE_HASHTABLE(gpu_process_limits, GPU_PROCESS_HASH_BITS);
-static DEFINE_SPINLOCK(gpu_process_lock);
+//
+// Declare util functions
+//
 
-struct gpu_process_entry {
-    struct hlist_node hash_node;
-    pid_t pid;
-    size_t memory_limit;
-    size_t memory_current;
-    unsigned long last_update;
-};
+static struct task_struct *gvm_find_task_by_pid(pid_t pid);
+static int gvm_get_active_gpu_count(void);
 
 //
 // Per-process debugfs file operations
@@ -41,20 +35,12 @@ struct gpu_process_entry {
 static int gvm_process_memory_high_show(struct seq_file *m, void *data)
 {
     struct gvm_gpu_debugfs *gpu_debugfs = m->private;
-    struct gpu_process_entry *entry;
-    size_t limit = 0;
 
-    spin_lock(&gpu_process_lock);
-    hash_for_each_possible(gpu_process_limits, entry, hash_node, gpu_debugfs->pid)
-    {
-        if (entry->pid == gpu_debugfs->pid) {
-            limit = entry->memory_limit == SIZE_MAX ? 0 : entry->memory_limit;
-            break;
-        }
-    }
-    spin_unlock(&gpu_process_lock);
+    // Should read from the metadata datastructure in target pid's uvm_va_space.
+    // Return dummy value based on PID and GPU ID for demonstration
+    size_t dummy_limit = (gpu_debugfs->pid * 1000) + (gpu_debugfs->gpu_id);
 
-    seq_printf(m, "%zu\n", limit);
+    seq_printf(m, "%zu\n", dummy_limit);
     return 0;
 }
 
@@ -90,20 +76,12 @@ static ssize_t gvm_process_memory_high_write(struct file *file, const char __use
 static int gvm_process_memory_current_show(struct seq_file *m, void *data)
 {
     struct gvm_gpu_debugfs *gpu_debugfs = m->private;
-    struct gpu_process_entry *entry;
-    size_t current_mem = 0;
 
-    spin_lock(&gpu_process_lock);
-    hash_for_each_possible(gpu_process_limits, entry, hash_node, gpu_debugfs->pid)
-    {
-        if (entry->pid == gpu_debugfs->pid) {
-            current_mem = entry->memory_current;
-            break;
-        }
-    }
-    spin_unlock(&gpu_process_lock);
+    // Should read from the metadata datastructure in target pid's uvm_va_space.
+    // Return dummy value based on PID and GPU ID for demonstration
+    size_t dummy_current = (gpu_debugfs->pid * 500) + (gpu_debugfs->gpu_id * 100);
 
-    seq_printf(m, "%zu\n", current_mem);
+    seq_printf(m, "%zu\n", dummy_current);
     return 0;
 }
 
@@ -245,19 +223,11 @@ static const struct file_operations gvm_process_compute_current_fops = {
 
 static int gvm_processes_list_show(struct seq_file *m, void *data)
 {
-    struct gpu_process_entry *entry;
-    int bucket;
-
-    seq_printf(m, "PID\tMemory_Limit\tMemory_Current\tLast_Update\n");
-
-    spin_lock(&gpu_process_lock);
-    hash_for_each(gpu_process_limits, bucket, entry, hash_node)
-    {
-        seq_printf(m, "%d\t%zu\t%zu\t%lu\n", entry->pid,
-                   entry->memory_limit == SIZE_MAX ? 0 : entry->memory_limit, entry->memory_current,
-                   entry->last_update);
-    }
-    spin_unlock(&gpu_process_lock);
+    seq_printf(m, "PID\tGPU_ID\tMemory_Limit\tMemory_Current\tLast_Update\n");
+    seq_printf(m, "1234\t0\t1000000\t500000\t12345\n");
+    seq_printf(m, "1234\t1\t2000000\t750000\t12346\n");
+    seq_printf(m, "5678\t0\t1500000\t600000\t12347\n");
+    seq_printf(m, "# This is a dummy list showing per-GPU process entries\n");
 
     return 0;
 }
@@ -456,6 +426,24 @@ void gvm_debugfs_exit(void)
 //
 // Util functions
 //
+
+// Find the task by PID
+static struct task_struct *gvm_find_task_by_pid(pid_t pid)
+{
+    struct task_struct *task = NULL;
+    struct pid *pid_struct;
+
+    rcu_read_lock();
+    pid_struct = find_pid_ns(pid, &init_pid_ns);
+    if (pid_struct) {
+        task = pid_task(pid_struct, PIDTYPE_PID);
+        if (task)
+            get_task_struct(task);
+    }
+    rcu_read_unlock();
+
+    return task;
+}
 
 // Get count of active GPUs known to UVM
 static int gvm_get_active_gpu_count(void)
