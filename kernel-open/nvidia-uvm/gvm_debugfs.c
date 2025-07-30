@@ -445,6 +445,137 @@ static struct task_struct *gvm_find_task_by_pid(pid_t pid)
     return task;
 }
 
+// Copied from https://elixir.bootlin.com/linux/v6.16/source/fs/file.c#L974
+static struct file *_gvm_fget_files_rcu(struct files_struct *files, unsigned int fd, fmode_t mask)
+{
+    for (;;) {
+        struct file *file;
+        struct fdtable *fdt = rcu_dereference_raw(files->fdt);
+        struct file __rcu **fdentry;
+        unsigned long nospec_mask;
+
+        /* Mask is a 0 for invalid fd's, ~0 for valid ones */
+        nospec_mask = array_index_mask_nospec(fd, fdt->max_fds);
+
+        /*
+         * fdentry points to the 'fd' offset, or fdt->fd[0].
+         * Loading from fdt->fd[0] is always safe, because the
+         * array always exists.
+         */
+        fdentry = fdt->fd + (fd & nospec_mask);
+
+        /* Do the load, then mask any invalid result */
+        file = rcu_dereference_raw(*fdentry);
+        file = (void *) (nospec_mask & (unsigned long) file);
+        if (unlikely(!file))
+            return NULL;
+
+        /*
+         * Ok, we have a file pointer that was valid at
+         * some point, but it might have become stale since.
+         *
+         * We need to confirm it by incrementing the refcount
+         * and then check the lookup again.
+         *
+         * file_ref_get() gives us a full memory barrier. We
+         * only really need an 'acquire' one to protect the
+         * loads below, but we don't have that.
+         */
+        /* NOTE (yifan): we use get_file_rcu_many() for kernel generality and
+         * to avoid the use of file_ref_get() and internal fields of struct file.
+         */
+        if (unlikely(!get_file_rcu_many(file, 1)))
+            continue;
+
+        /*
+         * Such a race can take two forms:
+         *
+         *  (a) the file ref already went down to zero and the
+         *      file hasn't been reused yet or the file count
+         *      isn't zero but the file has already been reused.
+         *
+         *  (b) the file table entry has changed under us.
+         *       Note that we don't need to re-check the 'fdt->fd'
+         *       pointer having changed, because it always goes
+         *       hand-in-hand with 'fdt'.
+         *
+         * If so, we need to put our ref and try again.
+         */
+        if (unlikely(file != rcu_dereference_raw(*fdentry)) ||
+            unlikely(rcu_dereference_raw(files->fdt) != fdt)) {
+            fput(file);
+            continue;
+        }
+
+        /*
+         * This isn't the file we're looking for or we're not
+         * allowed to get a reference to it.
+         */
+        if (unlikely(file->f_mode & mask)) {
+            fput(file);
+            return NULL;
+        }
+
+        /*
+         * Ok, we have a ref to the file, and checked that it
+         * still exists.
+         */
+        return file;
+    }
+}
+
+// Mimicking fget_task(). The caller MUST fput() the returned file.
+static struct file *gvm_fget_task(struct task_struct *task, unsigned int fd)
+{
+    struct file *file = NULL;
+
+    task_lock(task);
+    if (task->files) {
+        rcu_read_lock();
+        file = _gvm_fget_files_rcu(task->files, fd, 0);
+        rcu_read_unlock();
+    }
+    task_unlock(task);
+
+    return file;
+}
+// static struct file *gvm_fget_task(struct task_struct *task, unsigned int fd)
+// {
+//     struct file *file = NULL;
+//     struct files_struct *files;
+//     struct fdtable *fdt;
+//     struct file __rcu **fdentry;
+
+//     if (unlikely((int) fd < 0))
+//         return NULL;
+
+//     /*
+//      * ->files can change while the task is running, so pin the pointer
+//      * with task_lock().
+//      */
+//     task_lock(task);
+//     files = task->files;
+//     if (!files)
+//         goto out_unlock;
+
+//     /* RCU protects the fdtable itself and its array of file pointers. */
+//     rcu_read_lock();
+
+//     fdt = rcu_dereference_raw(files->fdt);
+//     if (fd >= fdt->max_fds)
+//         goto out_rcu;
+
+//     fdentry = &fdt->fd[fd];
+//     /* get_file_rcu() grabs a reference only if the pointer is still valid */
+//     file = get_file_rcu(fdentry);
+
+// out_rcu:
+//     rcu_read_unlock();
+// out_unlock:
+//     task_unlock(task);
+//     return file; /* may be NULL – caller must check */
+// }
+
 // Get count of active GPUs known to UVM
 static int gvm_get_active_gpu_count(void)
 {
