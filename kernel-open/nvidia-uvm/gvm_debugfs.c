@@ -446,7 +446,8 @@ static struct task_struct *gvm_find_task_by_pid(pid_t pid)
 }
 
 // Copied from https://elixir.bootlin.com/linux/v6.16/source/fs/file.c#L974
-static struct file *_gvm_fget_files_rcu(struct files_struct *files, unsigned int fd, fmode_t mask)
+static inline struct file *_gvm_fget_files_rcu(struct files_struct *files, unsigned int fd,
+                                               fmode_t mask)
 {
     for (;;) {
         struct file *file;
@@ -484,10 +485,10 @@ static struct file *_gvm_fget_files_rcu(struct files_struct *files, unsigned int
         /* NOTE (yifan): we use get_file_rcu_many() for kernel generality and
          * to avoid the use of file_ref_get() and internal fields of struct file.
          */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0) // 6.12.0
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)  // 6.12.0
         if (unlikely(!file_ref_get(&file->f_ref)))
             continue;
-#else // LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
+#else  // LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
         if (unlikely(!get_file_rcu_many(file, 1)))
             continue;
 #endif
