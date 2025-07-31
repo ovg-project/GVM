@@ -53,6 +53,28 @@ static const struct file_operations uvm_fops;
 static NV_STATUS uvm_api_ctrl_cmd_operate_channel_group(UVM_CTRL_CMD_OPERATE_CHANNEL_GROUP_PARAMS *params, struct file *filp);
 static NV_STATUS uvm_api_ctrl_cmd_operate_channel(UVM_CTRL_CMD_OPERATE_CHANNEL_PARAMS *params, struct file *filp);
 
+static struct file *fget_task_local(struct task_struct *task, unsigned int fd) {
+    struct files_struct *files;
+    struct fdtable *fdt;
+    struct file *file = NULL;
+
+    rcu_read_lock();
+
+    files = rcu_dereference_raw(task->files);
+    if (!files)
+        goto out;
+
+    fdt = rcu_dereference_raw(files->fdt);
+    if (!fdt || fd >= fdt->max_fds)
+        goto out;
+
+    file = get_file_rcu(&fdt->fd[fd]);
+
+out:
+    rcu_read_unlock();
+    return file;
+}
+
 bool uvm_file_is_nvidia_uvm(struct file *filp)
 {
     return (filp != NULL) && (filp->f_op == &uvm_fops);
@@ -1041,7 +1063,7 @@ int uvm_linux_api_get_task_uvmfd(struct task_struct *task, int *uvmfds, size_t s
     maxfd = filesp->fdt->max_fds;
 
     for (fd = 0; fd < maxfd && task_num_uvmfds < size; ++fd) {
-        filep = fget_task(task, fd);
+        filep = fget_task_local(task, fd);
         if (!filep)
             continue;
         if (uvm_fd_va_space(filep) != NULL) {
@@ -1056,7 +1078,7 @@ int uvm_linux_api_get_task_uvmfd(struct task_struct *task, int *uvmfds, size_t s
 EXPORT_SYMBOL_GPL(uvm_linux_api_get_task_uvmfd);
 
 int uvm_linux_api_preempt_task(struct task_struct *task, int fd) {
-    struct file *filep = fget_task(task, fd);
+    struct file *filep = fget_task_local(task, fd);
     UVM_CTRL_CMD_OPERATE_CHANNEL_PARAMS params = {
         .cmd = NVA06F_CTRL_CMD_STOP_CHANNEL,
         .data = {
@@ -1089,7 +1111,7 @@ out:
 EXPORT_SYMBOL_GPL(uvm_linux_api_preempt_task);
 
 int uvm_linux_api_reschedule_task(struct task_struct *task, int fd) {
-    struct file *filep = fget_task(task, fd);
+    struct file *filep = fget_task_local(task, fd);
     UVM_CTRL_CMD_OPERATE_CHANNEL_PARAMS bind_params = {
         .cmd = NVA06F_CTRL_CMD_BIND,
         .data = {
