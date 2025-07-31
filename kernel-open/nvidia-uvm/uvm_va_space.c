@@ -990,9 +990,12 @@ NV_STATUS uvm_va_space_register_gpu(uvm_va_space_t *va_space,
     }
 
     // Create debugfs GPU directory for this process
-    va_space->gpu_cgroup[uvm_id_gpu_index(gpu->id)].compute_max = 100;
-    va_space->gpu_cgroup[uvm_id_gpu_index(gpu->id)].memory_limit = -1ULL;
-    gvm_debugfs_create_gpu_dir(va_space->pid, gpu->id);
+    if (va_space->gpu_cgroup[uvm_id_gpu_index(gpu->id)].registered_count == 0) {
+        va_space->gpu_cgroup[uvm_id_gpu_index(gpu->id)].compute_max = 100;
+        va_space->gpu_cgroup[uvm_id_gpu_index(gpu->id)].memory_limit = -1ULL;
+        gvm_debugfs_create_gpu_dir(va_space->pid, gpu->id);
+    }
+    va_space->gpu_cgroup[uvm_id_gpu_index(gpu->id)].registered_count += 1;
 
     goto done;
 
@@ -1146,7 +1149,10 @@ NV_STATUS uvm_va_space_unregister_gpu(uvm_va_space_t *va_space, const NvProcesso
     uvm_mutex_unlock(&g_uvm_global.global_lock);
 
     // Remove debugfs GPU directory for this process
-    gvm_debugfs_remove_gpu_dir(va_space->pid, gpu->id);
+    va_space->gpu_cgroup[uvm_id_gpu_index(gpu->id)].registered_count -= 1;
+    if (va_space->gpu_cgroup[uvm_id_gpu_index(gpu->id)].registered_count == 0) {
+        gvm_debugfs_remove_gpu_dir(va_space->pid, gpu->id);
+    }
 
     uvm_va_space_mm_or_current_release(va_space, mm);
 

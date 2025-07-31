@@ -148,6 +148,8 @@ struct uvm_gpu_cgroup_struct
 
     size_t compute_max;
     size_t compute_current;
+
+    size_t registered_count;
 };
 
 typedef struct
