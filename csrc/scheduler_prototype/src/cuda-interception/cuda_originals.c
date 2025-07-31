@@ -3266,6 +3266,26 @@ CUresult cuMemAllocManaged(CUdeviceptr *dptr, size_t bytesize,
   return CUDA_ENTRY_CALL(cuda_library_entry, cuMemAllocManaged, dptr, bytesize, flags);
 }
 
+CUresult cuMemAlloc_v2(CUdeviceptr *dptr, size_t bytesize) {
+  return CUDA_ENTRY_CALL(cuda_library_entry, cuMemAlloc_v2, dptr, bytesize);
+}
+
+CUresult cuMemAlloc(CUdeviceptr *dptr, size_t bytesize) {
+  return CUDA_ENTRY_CALL(cuda_library_entry, cuMemAlloc, dptr, bytesize);
+}
+
+CUresult cuMemAllocPitch_v2(CUdeviceptr *dptr, size_t *pPitch,
+                            size_t WidthInBytes, size_t Height,
+                            unsigned int ElementSizeBytes) {
+  return CUDA_ENTRY_CALL(cuda_library_entry, cuMemAllocPitch_v2, dptr, pPitch,
+                        WidthInBytes, Height, ElementSizeBytes);
+}
+
+CUresult cuMemAllocPitch(CUdeviceptr *dptr, size_t *pPitch, size_t WidthInBytes,
+                         size_t Height, unsigned int ElementSizeBytes) {
+  return CUDA_ENTRY_CALL(cuda_library_entry, cuMemAllocPitch, dptr, pPitch,
+                        WidthInBytes, Height, ElementSizeBytes);
+}
 
 CUresult cuArrayCreate_v2(CUarray *pHandle,
                           const CUDA_ARRAY_DESCRIPTOR *pAllocateArray) {
@@ -3323,6 +3343,16 @@ CUresult cuDeviceTotalMem_v2(size_t *bytes, CUdevice dev) {
 
 CUresult cuDeviceTotalMem(size_t *bytes, CUdevice dev) {
   CUresult ret = CUDA_ENTRY_CALL(cuda_library_entry, cuDeviceTotalMem, bytes, dev);
+  return ret;
+}
+
+CUresult cuMemGetInfo_v2(size_t *free, size_t *total) {
+  CUresult ret = CUDA_ENTRY_CALL(cuda_library_entry, cuMemGetInfo_v2, free, total);
+  return ret;
+}
+
+CUresult cuMemGetInfo(size_t *free, size_t *total) {
+  CUresult ret = CUDA_ENTRY_CALL(cuda_library_entry, cuMemGetInfo, free, total);
   return ret;
 }
 
