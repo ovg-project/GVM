@@ -77,8 +77,7 @@ static ssize_t gvm_process_memory_limit_write(struct file *file, const char __us
     UVM_ASSERT(va_space->gpu_cgroup != NULL);
     va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].memory_limit = limit;
 
-    // TODO
-    // Charge memory usage
+    uvm_debugfs_api_charge_gpu_memory_limit(va_space, gpu_debugfs->gpu_id, va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].memory_current, limit);
 
     return count;
 }
