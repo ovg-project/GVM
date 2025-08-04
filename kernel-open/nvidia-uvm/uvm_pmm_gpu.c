@@ -1509,51 +1509,67 @@ static NV_STATUS pick_and_evict_root_chunk(uvm_pmm_gpu_t *pmm,
     NV_STATUS status;
     uvm_gpu_chunk_t *chunk;
     uvm_gpu_root_chunk_t *root_chunk;
+    uvm_va_space_t *va_space;
+    size_t memory_current, memory_limit;
 
     UVM_ASSERT(uvm_parent_gpu_supports_eviction(gpu->parent));
 
     uvm_assert_mutex_locked(&pmm->lock);
 
-    root_chunk = pick_root_chunk_to_evict(pmm);
-    if (!root_chunk)
-        return NV_ERR_NO_MEMORY;
+    while (true) {
+        root_chunk = pick_root_chunk_to_evict(pmm);
+        if (!root_chunk)
+            return NV_ERR_NO_MEMORY;
 
-    status = evict_root_chunk(pmm, root_chunk, pmm_context);
-    if (status != NV_OK)
-        return status;
-
-    chunk = &root_chunk->chunk;
-
-    if (type == UVM_PMM_GPU_MEMORY_TYPE_KERNEL) {
-        NvU32 flags = 0;
-        if (pmm_context == PMM_CONTEXT_PMA_EVICTION)
-            flags |= UVM_PMA_CALLED_FROM_PMA_EVICTION;
-
-        // Transitioning user memory type to kernel memory type requires pinning
-        // it so that PMA doesn't pick it for eviction.
-        status = nvUvmInterfacePmaPinPages(pmm->pma,
-                                           &chunk->address,
-                                           1,
-                                           UVM_CHUNK_SIZE_MAX,
-                                           flags);
-        if (status == NV_ERR_IN_USE) {
-            // Pinning can fail if some of the pages have been chosen for
-            // eviction already. In that case free the root chunk back to PMA
-            // and let the caller retry.
-            free_root_chunk(pmm, root_chunk, free_root_chunk_mode_from_pmm_context(pmm_context));
-
-            return status;
+        chunk = &root_chunk->chunk;
+        if (chunk->va_block) {
+            va_space = uvm_va_block_get_va_space_maybe_dead(chunk->va_block);
+            if (va_space) {
+                memory_current = va_space->gpu_cgroup[uvm_id_gpu_index(gpu->id)].memory_current;
+                memory_limit = va_space->gpu_cgroup[uvm_id_gpu_index(gpu->id)].memory_limit;
+            }
         }
 
-        UVM_ASSERT_MSG(status == NV_OK,
-                       "pmaPinPages(root_chunk=0x%llx) failed unexpectedly: %s\n",
-                       chunk->address,
-                       nvstatusToString(status));
+        status = evict_root_chunk(pmm, root_chunk, pmm_context);
+        if (status != NV_OK)
+            return status;
 
-        uvm_spin_lock(&pmm->list_lock);
-        chunk->type = type;
-        uvm_spin_unlock(&pmm->list_lock);
-    }
+        if (type == UVM_PMM_GPU_MEMORY_TYPE_KERNEL) {
+            NvU32 flags = 0;
+            if (pmm_context == PMM_CONTEXT_PMA_EVICTION)
+                flags |= UVM_PMA_CALLED_FROM_PMA_EVICTION;
+
+            // Transitioning user memory type to kernel memory type requires pinning
+            // it so that PMA doesn't pick it for eviction.
+            status = nvUvmInterfacePmaPinPages(pmm->pma,
+                                               &chunk->address,
+                                               1,
+                                               UVM_CHUNK_SIZE_MAX,
+                                               flags);
+            if (status == NV_ERR_IN_USE) {
+                // Pinning can fail if some of the pages have been chosen for
+                // eviction already. In that case free the root chunk back to PMA
+                // and let the caller retry.
+                free_root_chunk(pmm, root_chunk, free_root_chunk_mode_from_pmm_context(pmm_context));
+
+                return status;
+            }
+
+            UVM_ASSERT_MSG(status == NV_OK,
+                           "pmaPinPages(root_chunk=0x%llx) failed unexpectedly: %s\n",
+                           chunk->address,
+                           nvstatusToString(status));
+
+            uvm_spin_lock(&pmm->list_lock);
+            chunk->type = type;
+            uvm_spin_unlock(&pmm->list_lock);
+        }
+
+        if (memory_current <= memory_limit)
+            break;
+
+        free_root_chunk(pmm, root_chunk, free_root_chunk_mode_from_pmm_context(pmm_context));
+    };
 
     *out_chunk = chunk;
     return NV_OK;
