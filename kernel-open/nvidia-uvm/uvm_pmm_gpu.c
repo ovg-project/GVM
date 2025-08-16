@@ -1171,6 +1171,27 @@ static uvm_gpu_chunk_t *list_first_chunk(struct list_head *list)
     return list_first_entry_or_null(list, uvm_gpu_chunk_t, list);
 }
 
+static uvm_gpu_chunk_t *list_first_chunk_of_pid(struct list_head *list, pid_t pid)
+{
+    uvm_va_space_t *va_space;
+    uvm_gpu_chunk_t *chunk;
+    list_for_each_entry(chunk, list, list) {
+        if (pid == 0)
+            break;
+
+        if (!chunk)
+            continue;
+        if (!chunk->va_block)
+            continue;
+
+        va_space = uvm_va_block_get_va_space_maybe_dead(chunk->va_block);
+        if (va_space && va_space->pid == pid)
+            break;
+    }
+
+    return (&(chunk->list) == list) ? NULL : chunk;
+}
+
 void uvm_pmm_gpu_merge_chunk(uvm_pmm_gpu_t *pmm, uvm_gpu_chunk_t *chunk)
 {
     uvm_mutex_lock(&pmm->lock);
@@ -1481,42 +1502,38 @@ static uvm_gpu_root_chunk_t *pick_root_chunk_to_evict(uvm_pmm_gpu_t *pmm, pid_t 
     // Check if there are root chunks sitting in the free lists. Non-zero
     // chunks are preferred.
     while (true) {
-        chunk = list_first_chunk(find_free_list(pmm,
+        chunk = list_first_chunk_of_pid(find_free_list(pmm,
                                                 UVM_PMM_GPU_MEMORY_TYPE_USER,
                                                 UVM_CHUNK_SIZE_MAX,
-                                                UVM_PMM_LIST_NO_ZERO));
+                                                UVM_PMM_LIST_NO_ZERO), pid);
         if (chunk)
             UVM_ASSERT(!chunk->is_zero);
 
         if (!chunk) {
-            chunk = list_first_chunk(find_free_list(pmm,
+            chunk = list_first_chunk_of_pid(find_free_list(pmm,
                                                     UVM_PMM_GPU_MEMORY_TYPE_USER,
                                                     UVM_CHUNK_SIZE_MAX,
-                                                    UVM_PMM_LIST_ZERO));
+                                                    UVM_PMM_LIST_ZERO), pid);
             if (chunk)
                 UVM_ASSERT(chunk->is_zero);
         }
 
         if (!chunk)
-            chunk = list_first_chunk(&pmm->root_chunks.va_block_unused);
+            chunk = list_first_chunk_of_pid(&pmm->root_chunks.va_block_unused, pid);
 
         // TODO: Bug 1765193: Move the chunks to the tail of the used list whenever
         // they get mapped.
         if (!chunk)
-            chunk = list_first_chunk(&pmm->root_chunks.va_block_used);
+            chunk = list_first_chunk_of_pid(&pmm->root_chunks.va_block_used, pid);
 
-        if (!chunk)
-            break;
-
-        if (!chunk->va_block)
-            break;
-
-        if (pid == 0)
+        if (!chunk || !chunk->va_block || pid == 0)
             break;
 
         va_space = uvm_va_block_get_va_space_maybe_dead(chunk->va_block);
-        if (va_space && va_space->pid == pid)
-            break;
+        if (va_space) {
+            printk(KERN_INFO "va_space pid %d, target pid %d\n", va_space->pid, pid);
+        }
+        break;
     }
 
     if (chunk)
@@ -1533,6 +1550,7 @@ static NV_STATUS pick_and_evict_root_chunk(uvm_pmm_gpu_t *pmm,
                                            uvm_pmm_gpu_memory_type_t type,
                                            uvm_pmm_context_t pmm_context,
                                            pid_t pid,
+                                           uvm_pmm_alloc_flags_t flags,
                                            uvm_gpu_chunk_t **out_chunk)
 {
     uvm_gpu_t *gpu = uvm_pmm_to_gpu(pmm);
@@ -1595,7 +1613,7 @@ static NV_STATUS pick_and_evict_root_chunk(uvm_pmm_gpu_t *pmm,
             uvm_spin_unlock(&pmm->list_lock);
         }
 
-        if (memory_current <= memory_limit)
+        if (memory_current <= memory_limit || !(flags & UVM_PMM_ALLOC_FLAGS_EVICT_FORCE))
             break;
 
         free_root_chunk(pmm, root_chunk, free_root_chunk_mode_from_pmm_context(pmm_context));
@@ -1609,6 +1627,7 @@ static NV_STATUS pick_and_evict_root_chunk_retry(uvm_pmm_gpu_t *pmm,
                                                  uvm_pmm_gpu_memory_type_t type,
                                                  uvm_pmm_context_t pmm_context,
                                                  pid_t pid,
+                                                 uvm_pmm_alloc_flags_t flags,
                                                  uvm_gpu_chunk_t **out_chunk)
 {
     NV_STATUS status;
@@ -1616,7 +1635,7 @@ static NV_STATUS pick_and_evict_root_chunk_retry(uvm_pmm_gpu_t *pmm,
     // Eviction can fail if the chunk gets selected for PMA eviction at
     // the same time. Keep retrying.
     do {
-        status = pick_and_evict_root_chunk(pmm, type, pmm_context, pid, out_chunk);
+        status = pick_and_evict_root_chunk(pmm, type, pmm_context, pid, flags, out_chunk);
     } while (status == NV_ERR_IN_USE);
 
     return status;
@@ -1719,7 +1738,7 @@ static NV_STATUS alloc_or_evict_root_chunk(uvm_pmm_gpu_t *pmm,
     status = (flags & UVM_PMM_ALLOC_FLAGS_EVICT_FORCE) ? NV_ERR_NO_MEMORY : alloc_root_chunk(pmm, type, flags, &chunk);
     if (status != NV_OK) {
         if ((flags & UVM_PMM_ALLOC_FLAGS_EVICT) && uvm_parent_gpu_supports_eviction(gpu->parent))
-            status = pick_and_evict_root_chunk_retry(pmm, type, PMM_CONTEXT_DEFAULT, pid, chunk_out);
+            status = pick_and_evict_root_chunk_retry(pmm, type, PMM_CONTEXT_DEFAULT, pid, flags, chunk_out);
 
         return status;
     }
@@ -1743,7 +1762,7 @@ static NV_STATUS alloc_or_evict_root_chunk_unlocked(uvm_pmm_gpu_t *pmm,
     if (status != NV_OK) {
         if ((flags & UVM_PMM_ALLOC_FLAGS_EVICT) && uvm_parent_gpu_supports_eviction(gpu->parent)) {
             uvm_mutex_lock(&pmm->lock);
-            status = pick_and_evict_root_chunk_retry(pmm, type, PMM_CONTEXT_DEFAULT, pid, chunk_out);
+            status = pick_and_evict_root_chunk_retry(pmm, type, PMM_CONTEXT_DEFAULT, pid, flags, chunk_out);
             uvm_mutex_unlock(&pmm->lock);
         }
 
@@ -2572,6 +2591,7 @@ static NV_STATUS uvm_pmm_gpu_pma_evict_pages(void *void_pmm,
             status = pick_and_evict_root_chunk_retry(pmm,
                                                      UVM_PMM_GPU_MEMORY_TYPE_KERNEL,
                                                      PMM_CONTEXT_PMA_EVICTION,
+                                                     0,
                                                      0,
                                                      &chunk);
         }
