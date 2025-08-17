@@ -1268,6 +1268,25 @@ out:
     return error;
 }
 
+int uvm_debugfs_api_set_timeslice(uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id, size_t timeslice) {
+    UVM_CTRL_CMD_OPERATE_CHANNEL_GROUP_PARAMS params = {
+        .cmd = NVA06C_CTRL_CMD_SET_TIMESLICE,
+        .data = {
+            .NVA06C_CTRL_TIMESLICE_PARAMS = {
+                .timesliceUs = timeslice
+            }
+        },
+        .dataSize = sizeof(NVA06C_CTRL_TIMESLICE_PARAMS),
+        .rmStatus = 0
+    };
+    int error = 0;
+
+    if (uvm_debugfs_api_ctrl_cmd_operate_channel_group(&params, va_space, gpu_id) != NV_OK)
+        error = -EINVAL;
+
+    return error;
+}
+
 static NV_STATUS uvm_api_ctrl_cmd_operate_channel_group(UVM_CTRL_CMD_OPERATE_CHANNEL_GROUP_PARAMS *params, struct file *filp)
 {
     uvm_va_space_t *va_space = uvm_va_space_get(filp);

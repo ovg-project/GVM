@@ -13,6 +13,7 @@
 
 int uvm_debugfs_api_preempt_task(uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id);
 int uvm_debugfs_api_reschedule_task(uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id);
+int uvm_debugfs_api_set_timeslice(uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id, size_t timeslice);
 
 // Global debugfs root directory
 static struct dentry *gvm_debugfs_root;
@@ -24,6 +25,10 @@ static DEFINE_HASHTABLE(gvm_debugfs_dirs, GVM_DEBUGFS_HASH_BITS);
 static DEFINE_SPINLOCK(gvm_debugfs_lock);
 
 #define GVM_MAX_VM_SPACES 8
+
+// Timeslice is calculated by GVM_MAX_TIMESLICE_US >> priority
+// In default, priority is 2, whose timeslice is 2048 us
+#define GVM_MAX_TIMESLICE_US 8192
 
 //
 // Forward declarations of util functions
@@ -110,7 +115,7 @@ static int gvm_process_memory_current_show(struct seq_file *m, void *data)
 }
 
 // Show current compute timeslice for a specific process and GPU
-static int gvm_process_compute_max_show(struct seq_file *m, void *data)
+static int gvm_process_compute_priority_show(struct seq_file *m, void *data)
 {
     struct gvm_gpu_debugfs *gpu_debugfs = m->private;
     uvm_va_space_t *va_space = _gvm_find_va_space_by_pid(gpu_debugfs->pid);
@@ -119,24 +124,27 @@ static int gvm_process_compute_max_show(struct seq_file *m, void *data)
         return -ENOENT;
 
     UVM_ASSERT(va_space->gpu_cgroup != NULL);
-    seq_printf(m, "%zu\n", va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].compute_max);
+    seq_printf(m, "%zu\n", va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].compute_priority);
 
     return 0;
 }
 
 // Set compute timeslice limit for a specific process and GPU
-static ssize_t gvm_process_compute_max_write(struct file *file, const char __user *user_buf,
+static ssize_t gvm_process_compute_priority_write(struct file *file, const char __user *user_buf,
                                               size_t count, loff_t *ppos)
 {
     struct seq_file *m = file->private_data;
     struct gvm_gpu_debugfs *gpu_debugfs = m->private;
-    uvm_va_space_t *va_space = _gvm_find_va_space_by_pid(gpu_debugfs->pid);
-    int gpu_id_index = uvm_id_gpu_index(gpu_debugfs->gpu_id);
+    int error = 0;
+    uvm_va_space_t *va_spaces[GVM_MAX_VM_SPACES];
+    size_t va_space_index;
+    size_t va_space_count;
     char buf[32];
-    size_t max;
-    int error;
+    size_t priority;
 
-    if (!va_space)
+    va_space_count = _gvm_find_va_spaces_by_pid(gpu_debugfs->pid, va_spaces, GVM_MAX_VM_SPACES);
+
+    if (va_space_count == 0)
         return -ENOENT;
 
     if (count >= sizeof(buf))
@@ -147,39 +155,27 @@ static ssize_t gvm_process_compute_max_write(struct file *file, const char __use
 
     buf[count] = '\0';
 
-    error = kstrtoul(buf, 10, (unsigned long *) &max);
+    error = kstrtoul(buf, 10, (unsigned long *) &priority);
     if (error != 0)
         return error;
 
-    UVM_ASSERT(va_space->gpu_cgroup != NULL);
-    va_space->gpu_cgroup[gpu_id_index].compute_max = max;
-
-    if (va_space->gpu_cgroup[gpu_id_index].compute_max < va_space->gpu_cgroup[gpu_id_index].compute_current) {
-        if (va_space->gpu_cgroup[gpu_id_index].compute_max == 0) {
-            va_space->gpu_cgroup[gpu_id_index].compute_current = 0;
-            error = uvm_debugfs_api_preempt_task(va_space, gpu_debugfs->gpu_id);
-            if (error != 0)
-                return error;
-        }
-        else {
-            // TODO: Set timeslice
-        }
-    }
-    else if (va_space->gpu_cgroup[gpu_id_index].compute_max > va_space->gpu_cgroup[gpu_id_index].compute_current) {
-        if (va_space->gpu_cgroup[gpu_id_index].compute_current == 0) {
-            // TODO: Set current value according to timeslice
-            va_space->gpu_cgroup[gpu_id_index].compute_current = 100;
-            error = uvm_debugfs_api_reschedule_task(va_space, gpu_debugfs->gpu_id);
-            if (error != 0)
-                return error;
-        }
-        // TODO: Set timeslice
+    if (priority > 4) {
+        printk(KERN_INFO "priority should range from 0 to 4 but got %llu\n", priority);
+        error = -EINVAL;
+        goto out;
     }
 
-    // TODO
-    // Set timeslice or preempt
+    for (va_space_index = 0; va_space_index < va_space_count; ++va_space_index) {
+        UVM_ASSERT(va_spaces[va_space_index]->gpu_cgroup != NULL);
+        va_spaces[va_space_index]->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].compute_priority = priority;
 
-    return count;
+        if ((error = uvm_debugfs_api_set_timeslice(va_spaces[va_space_index], gpu_debugfs->gpu_id, GVM_MAX_TIMESLICE_US >> priority)) != 0)
+            break;
+    }
+
+
+out:
+    return error ? error : count;
 }
 
 // Reschedule a specific process on a specific GPU
@@ -226,15 +222,15 @@ static const struct file_operations gvm_process_memory_current_fops = {
     .release = single_release,
 };
 
-static int gvm_process_compute_max_open(struct inode *inode, struct file *file)
+static int gvm_process_compute_priority_open(struct inode *inode, struct file *file)
 {
-    return single_open(file, gvm_process_compute_max_show, inode->i_private);
+    return single_open(file, gvm_process_compute_priority_show, inode->i_private);
 }
 
-static const struct file_operations gvm_process_compute_max_fops = {
-    .open = gvm_process_compute_max_open,
+static const struct file_operations gvm_process_compute_priority_fops = {
+    .open = gvm_process_compute_priority_open,
     .read = seq_read,
-    .write = gvm_process_compute_max_write,
+    .write = gvm_process_compute_priority_write,
     .llseek = seq_lseek,
     .release = single_release,
 };
@@ -437,9 +433,9 @@ int gvm_debugfs_create_gpu_dir(pid_t pid, uvm_gpu_id_t gpu_id)
         goto cleanup;
     }
 
-    gpu_debugfs->compute_max = debugfs_create_file("compute.max", 0644, gpu_debugfs->gpu_dir,
-                                                    gpu_debugfs, &gvm_process_compute_max_fops);
-    if (!gpu_debugfs->compute_max) {
+    gpu_debugfs->compute_priority = debugfs_create_file("compute.priority", 0644, gpu_debugfs->gpu_dir,
+                                                    gpu_debugfs, &gvm_process_compute_priority_fops);
+    if (!gpu_debugfs->compute_priority) {
         ret = -ENOMEM;
         goto cleanup;
     }
