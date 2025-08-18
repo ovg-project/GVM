@@ -989,8 +989,6 @@ NV_STATUS uvm_va_space_register_gpu(uvm_va_space_t *va_space,
 
     // Create debugfs GPU directory for this process
     if (va_space->gpu_cgroup[uvm_id_gpu_index(gpu->id)].registered_count == 0) {
-        va_space->gpu_cgroup[uvm_id_gpu_index(gpu->id)].compute_priority = 2;
-        va_space->gpu_cgroup[uvm_id_gpu_index(gpu->id)].memory_limit = -1ULL;
         gvm_debugfs_create_gpu_dir(va_space->pid, gpu->id);
     }
     va_space->gpu_cgroup[uvm_id_gpu_index(gpu->id)].registered_count += 1;

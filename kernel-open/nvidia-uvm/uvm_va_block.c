@@ -150,8 +150,6 @@ static NV_STATUS uvm_va_space_evict_size(uvm_va_space_t *va_space, uvm_gpu_t *gp
     uvm_pmm_gpu_t *pmm = &gpu->pmm;
     size_t va_range_num_blocks;
     size_t block_index;
-    size_t va_block_num_chunks;
-    size_t chunk_index;
     size_t total_evicted_bytes = 0;
     NV_STATUS status = NV_OK;
 
@@ -293,8 +291,6 @@ EXPORT_SYMBOL_GPL(uvm_linux_api_charge_gpu_memory_high);
 
 int uvm_try_charge_gpu_memogy_cgroup(uvm_va_block_t *block, uvm_gpu_id_t gpu_id, size_t size, bool uncharge) {
     uvm_va_space_t *va_space;
-    struct mm_struct *mm;
-    struct task_struct *task;
     if (!block)
         return -EINVAL;
 
@@ -303,6 +299,9 @@ int uvm_try_charge_gpu_memogy_cgroup(uvm_va_block_t *block, uvm_gpu_id_t gpu_id,
         return -EINVAL;
 
 #if defined(NV_LINUX_GPU_CGROUP)
+    struct mm_struct *mm;
+    struct task_struct *task;
+
     mm = va_space->va_space_mm.mm;
     if (!mm)
         return -EINVAL;
@@ -2286,6 +2285,8 @@ static NV_STATUS block_alloc_gpu_chunk(uvm_va_block_t *block,
     uvm_va_space_t *va_space = uvm_va_block_get_va_space_maybe_dead(block);
     size_t rss = 0;
     size_t gmemcghigh = 0;
+    size_t rss_all = sum_gpu_memcg_current_all(gpu->id);
+    size_t gpu_all = gpu->mem_info.size;
     uvm_pmm_alloc_flags_t evict_flags = UVM_PMM_ALLOC_FLAGS_EVICT;
     uvm_gpu_chunk_t *gpu_chunk;
     struct task_struct *task;
@@ -2316,6 +2317,10 @@ static NV_STATUS block_alloc_gpu_chunk(uvm_va_block_t *block,
         }
         else {
             // Try allocating a new one without eviction
+            if (rss_all > (gpu_all * 8 / 10)) {
+                calculate_gpu_memcg_recommend_all(gpu->id);
+                signal_gpu_memcg_current_over_recommend_all(gpu->id);
+            }
             status = uvm_pmm_gpu_alloc_user_impl(&gpu->pmm, 1, size, UVM_PMM_ALLOC_FLAGS_NONE, task->pid, &gpu_chunk, &retry->tracker);
         }
 

@@ -25,6 +25,8 @@ static DEFINE_HASHTABLE(gvm_debugfs_dirs, GVM_DEBUGFS_HASH_BITS);
 static DEFINE_SPINLOCK(gvm_debugfs_lock);
 
 #define GVM_MAX_VA_SPACES 8
+#define GVM_MAX_PROCESSES 64
+#define GVM_SIGNAL_INTERVAL_SEC 10
 
 // Timeslice is calculated by GVM_MAX_TIMESLICE_US >> priority
 // In default, priority is 2, whose timeslice is 2048 us
@@ -110,6 +112,21 @@ static int gvm_process_memory_current_show(struct seq_file *m, void *data)
 
     UVM_ASSERT(va_space->gpu_cgroup != NULL);
     seq_printf(m, "%zu\n", va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].memory_current);
+
+    return 0;
+}
+
+// Show recommend memory usage for a specific process and GPU
+static int gvm_process_memory_recommend_show(struct seq_file *m, void *data)
+{
+    struct gvm_gpu_debugfs *gpu_debugfs = m->private;
+    uvm_va_space_t *va_space = _gvm_find_va_space_by_pid(gpu_debugfs->pid);
+
+    if (!va_space)
+        return -ENOENT;
+
+    UVM_ASSERT(va_space->gpu_cgroup != NULL);
+    seq_printf(m, "%zu\n", va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].memory_recommend);
 
     return 0;
 }
@@ -284,6 +301,18 @@ static int gvm_process_memory_current_open(struct inode *inode, struct file *fil
 
 static const struct file_operations gvm_process_memory_current_fops = {
     .open = gvm_process_memory_current_open,
+    .read = seq_read,
+    .llseek = seq_lseek,
+    .release = single_release,
+};
+
+static int gvm_process_memory_recommend_open(struct inode *inode, struct file *file)
+{
+    return single_open(file, gvm_process_memory_recommend_show, inode->i_private);
+}
+
+static const struct file_operations gvm_process_memory_recommend_fops = {
+    .open = gvm_process_memory_recommend_open,
     .read = seq_read,
     .llseek = seq_lseek,
     .release = single_release,
@@ -482,6 +511,11 @@ int gvm_debugfs_create_gpu_dir(pid_t pid, uvm_gpu_id_t gpu_id)
     if (va_space) {
         UVM_ASSERT(va_space->gpu_cgroup != NULL);
         va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].memory_current = 0;
+        va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].memory_recommend = -1ULL;
+        va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].memory_limit = -1ULL;
+
+        va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].compute_priority = 2;
+        va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].compute_freeze = 0;
         va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].compute_current = 100;
     }
 
@@ -509,6 +543,14 @@ int gvm_debugfs_create_gpu_dir(pid_t pid, uvm_gpu_id_t gpu_id)
         debugfs_create_file("memory.current", 0444, gpu_debugfs->gpu_dir, gpu_debugfs,
                             &gvm_process_memory_current_fops);
     if (!gpu_debugfs->memory_current) {
+        ret = -ENOMEM;
+        goto cleanup;
+    }
+
+    gpu_debugfs->memory_recommend =
+        debugfs_create_file("memory.recommend", 0444, gpu_debugfs->gpu_dir, gpu_debugfs,
+                            &gvm_process_memory_recommend_fops);
+    if (!gpu_debugfs->memory_recommend) {
         ret = -ENOMEM;
         goto cleanup;
     }
@@ -827,4 +869,93 @@ size_t get_gpu_memcg_current(uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id) {
 size_t get_gpu_memcg_limit(uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id) {
     UVM_ASSERT(va_space->gpu_cgroup);
     return va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].memory_limit;
+}
+
+size_t sum_gpu_memcg_current_all(uvm_gpu_id_t gpu_id) {
+    uvm_va_space_t *va_space;
+    pid_t pids[GVM_MAX_PROCESSES];
+    bool found;
+    size_t index;
+    size_t count = 0;
+    size_t size = 0;
+
+    uvm_mutex_lock(&g_uvm_global.va_spaces.lock);
+    list_for_each_entry(va_space, &g_uvm_global.va_spaces.list, list_node) {
+        if (count >= GVM_MAX_PROCESSES)
+            break;
+
+        found = false;
+        for (index = 0; index < count; ++index) {
+            if (pids[index] == va_space->pid) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            pids[count] = va_space->pid;
+            count += 1;
+            size += va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].memory_current;
+        }
+    }
+    uvm_mutex_unlock(&g_uvm_global.va_spaces.lock);
+
+    return size;
+}
+
+void calculate_gpu_memcg_recommend_all(uvm_gpu_id_t gpu_id) {
+    uvm_va_space_t *va_space;
+
+    uvm_mutex_lock(&g_uvm_global.va_spaces.lock);
+    list_for_each_entry(va_space, &g_uvm_global.va_spaces.list, list_node) {
+        va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].memory_recommend = va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].memory_limit;
+    }
+    uvm_mutex_unlock(&g_uvm_global.va_spaces.lock);
+}
+
+void signal_gpu_memcg_current_over_recommend_all(uvm_gpu_id_t gpu_id) {
+    struct pid *pid_struct;
+    struct timespec64 ts;
+    uvm_va_space_t *va_space;
+    pid_t pids[GVM_MAX_PROCESSES];
+    bool found;
+    size_t index;
+    size_t count = 0;
+
+    ktime_get_real_ts64(&ts);
+
+    uvm_mutex_lock(&g_uvm_global.va_spaces.lock);
+    list_for_each_entry(va_space, &g_uvm_global.va_spaces.list, list_node) {
+        if (count >= GVM_MAX_PROCESSES)
+            break;
+
+        found = false;
+        for (index = 0; index < count; ++index) {
+            if (pids[index] == va_space->pid) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            if (va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].memory_current > va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].memory_recommend) {
+                if (ts.tv_sec > va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].signal_tv_sec + GVM_SIGNAL_INTERVAL_SEC) {
+                    va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].signal_tv_sec = ts.tv_sec;
+                    pids[count] = va_space->pid;
+                    count += 1;
+                }
+            }
+        }
+    }
+    uvm_mutex_unlock(&g_uvm_global.va_spaces.lock);
+
+    for (index = 0; index < count; ++index) {
+        pid_struct = find_get_pid(pids[index]);
+        if (!pid_struct) {
+            printk(KERN_INFO "Failed to find struct pid from pid_t %d\n", pids[index]);
+        }
+
+        printk(KERN_INFO "Kill pid %d with signal %d\n", pids[index], SIGRTMIN+17);
+        kill_pid(pid_struct, SIGRTMIN+17, 1);
+    }
 }
