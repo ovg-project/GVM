@@ -30,8 +30,8 @@ static DEFINE_SPINLOCK(gvm_debugfs_lock);
 
 // Timeslice is calculated by GVM_MAX_TIMESLICE_US >> priority
 // In default, priority is 2, whose timeslice is 2048 us
-#define GVM_MIN_PRIORITY 6
-#define GVM_MAX_TIMESLICE_US 16384
+#define GVM_MIN_PRIORITY 16
+#define GVM_MAX_TIMESLICE_US 524288
 
 //
 // Forward declarations of util functions
