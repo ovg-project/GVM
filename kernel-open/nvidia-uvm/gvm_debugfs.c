@@ -145,7 +145,7 @@ static ssize_t gvm_process_memory_priority_write(struct file *file, const char _
         return error;
 
     if (priority > 2) {
-        printk(KERN_INFO "priority should be 0 or 1 but got %llu\n", priority);
+        UVM_ERR_PRINT("priority should be 0 or 1 but got %lu\n", priority);
         return -EINVAL;
     }
 
@@ -286,7 +286,7 @@ static ssize_t gvm_process_compute_priority_write(struct file *file, const char 
         return error;
 
     if (priority > GVM_MIN_PRIORITY) {
-        printk(KERN_INFO "priority should range from 0 to %d but got %llu\n", GVM_MIN_PRIORITY, priority);
+        UVM_ERR_PRINT("priority should range from 0 to %d but got %lu\n", GVM_MIN_PRIORITY, priority);
         error = -EINVAL;
         goto out;
     }
@@ -350,7 +350,7 @@ static ssize_t gvm_process_compute_freeze_write(struct file *file, const char __
         return error;
 
     if (freeze > 1) {
-        printk(KERN_INFO "freeze should be 0 or 1 but got %llu\n", freeze);
+        UVM_ERR_PRINT("freeze should be 0 or 1 but got %lu\n", freeze);
         error = -EINVAL;
         goto out;
     }
@@ -417,7 +417,7 @@ static ssize_t gvm_process_compute_realtime_write(struct file *file, const char 
         return error;
 
     if (realtime > 1) {
-        printk(KERN_INFO "realtime should be 0 or 1 but got %llu\n", realtime);
+        UVM_ERR_PRINT("realtime should be 0 or 1 but got %lu\n", realtime);
         error = -EINVAL;
         goto out;
     }
@@ -485,7 +485,7 @@ static ssize_t gvm_process_compute_interleave_level_write(struct file *file, con
     if (interleave_level != NVA06C_CTRL_INTERLEAVE_LEVEL_LOW &&
       interleave_level != NVA06C_CTRL_INTERLEAVE_LEVEL_MEDIUM &&
       interleave_level != NVA06C_CTRL_INTERLEAVE_LEVEL_HIGH) {
-        printk(KERN_INFO "interleave_level should be %d or %d or %d but got %llu\n", 
+        UVM_ERR_PRINT("interleave_level should be %d or %d or %d but got %lu\n",
         NVA06C_CTRL_INTERLEAVE_LEVEL_LOW,
         NVA06C_CTRL_INTERLEAVE_LEVEL_MEDIUM,
         NVA06C_CTRL_INTERLEAVE_LEVEL_HIGH,
@@ -1343,10 +1343,10 @@ void signal_gpu_memcg_current_over_recommend_all(uvm_gpu_id_t gpu_id) {
     for (index = 0; index < count; ++index) {
         pid_struct = find_get_pid(pids[index]);
         if (!pid_struct) {
-            printk(KERN_INFO "Failed to find struct pid from pid_t %d\n", pids[index]);
+            UVM_INFO_PRINT("Failed to find struct pid from pid_t %d\n", pids[index]);
         }
 
-        printk(KERN_INFO "Kill pid %d with signal %d\n", pids[index], SIGRTMIN+17);
+        UVM_INFO_PRINT("Kill pid %d with signal %d\n", pids[index], SIGRTMIN+17);
         kill_pid(pid_struct, SIGRTMIN+17, 1);
     }
 }
