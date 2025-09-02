@@ -1,0 +1,87 @@
+diff --git a/vllm/v1/worker/gpu_worker.py b/vllm/v1/worker/gpu_worker.py
+index dcfb038d2..a1961854d 100644
+--- a/vllm/v1/worker/gpu_worker.py
++++ b/vllm/v1/worker/gpu_worker.py
+@@ -82,6 +82,9 @@ class Worker(WorkerBase):
+         else:
+             self.profiler = None
+ 
++        # [GVM] Stream for execution, to be compatible with XSched
++        self.exec_stream = torch.cuda.Stream()
++
+     def sleep(self, level: int = 1) -> None:
+         from vllm.device_allocator.cumem import CuMemAllocator
+ 
+@@ -209,7 +212,7 @@ class Worker(WorkerBase):
+ 
+     @torch.inference_mode()
+     def determine_available_memory(self) -> int:
+-        """Profiles the peak memory usage of the model to determine how much 
++        """Profiles the peak memory usage of the model to determine how much
+         memory can be used for KV cache without OOMs.
+ 
+         The engine will first conduct a profiling of the existing memory usage.
+@@ -328,34 +331,36 @@ class Worker(WorkerBase):
+         self,
+         scheduler_output: "SchedulerOutput",
+     ) -> Optional[ModelRunnerOutput]:
+-        intermediate_tensors = None
+-        if not get_pp_group().is_first_rank:
+-            intermediate_tensors = IntermediateTensors(
+-                get_pp_group().recv_tensor_dict(
+-                    all_gather_group=get_tp_group()))
+-
+-        output = self.model_runner.execute_model(scheduler_output,
+-                                                 intermediate_tensors)
++        with torch.cuda.stream(self.exec_stream):
++            intermediate_tensors = None
++            if not get_pp_group().is_first_rank:
++                intermediate_tensors = IntermediateTensors(
++                    get_pp_group().recv_tensor_dict(
++                        all_gather_group=get_tp_group()))
++
++            output = self.model_runner.execute_model(scheduler_output,
++                                                     intermediate_tensors)
++
++            parallel_config = self.vllm_config.parallel_config
++            if parallel_config.distributed_executor_backend != "external_launcher" \
++                and not get_pp_group().is_last_rank:
++                assert isinstance(output, IntermediateTensors)
++                get_pp_group().send_tensor_dict(
++                    output.tensors, all_gather_group=get_tp_group())
++                if not has_kv_transfer_group():
++                    return None
++
++                # In case of PP with kv transfer, we need to pass through the
++                # finished_sending and finished_recving buffers.
++                new_output = EMPTY_MODEL_RUNNER_OUTPUT
++                if output.finished_sending or output.finished_recving:
++                    new_output = copy.copy(new_output)
++                    new_output.finished_sending = output.finished_sending
++                    new_output.finished_recving = output.finished_recving
++                output = new_output
++
++            assert isinstance(output, ModelRunnerOutput)
+ 
+-        parallel_config = self.vllm_config.parallel_config
+-        if parallel_config.distributed_executor_backend != "external_launcher" \
+-            and not get_pp_group().is_last_rank:
+-            assert isinstance(output, IntermediateTensors)
+-            get_pp_group().send_tensor_dict(output.tensors,
+-                                            all_gather_group=get_tp_group())
+-            if not has_kv_transfer_group():
+-                return None
+-
+-            # In case of PP with kv transfer, we need to pass through the
+-            # finished_sending and finished_recving buffers.
+-            new_output = EMPTY_MODEL_RUNNER_OUTPUT
+-            if output.finished_sending or output.finished_recving:
+-                new_output = copy.copy(new_output)
+-                new_output.finished_sending = output.finished_sending
+-                new_output.finished_recving = output.finished_recving
+-            output = new_output
+-
+-        assert isinstance(output, ModelRunnerOutput)
+         return output
+ 
+     def profile(self, is_start: bool = True):
