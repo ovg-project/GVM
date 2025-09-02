@@ -1,0 +1,7 @@
+.vscode
+.DS_Store
+
+build
+output
+
+*.log
