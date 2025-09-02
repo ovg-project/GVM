@@ -5,4 +5,4 @@ vllm bench serve \
     --dataset-name sharegpt --dataset-path ShareGPT_V3_unfiltered_cleaned_split.json \
     --num-prompts 2048 \
     --trust-remote-code \
-    --save-result --save-detailed --result-dir benchmark_log
+    --save-result --save-detailed --result-dir vllm_log
