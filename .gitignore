@@ -3,3 +3,8 @@
 *.o.cmd
 *.o.d
 _out/
+
+
+# GVM dev
+**/.cache
+**/compile_commands.json
