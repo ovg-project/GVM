@@ -44,6 +44,8 @@
 #include "uvm_kvmalloc.h"
 #include "uvm_test_file.h"
 
+// [GVM]
+#include "uvm_debugfs_api.h"
 #include "gvm_debugfs.h"
 
 #define NVIDIA_UVM_DEVICE_NAME          "nvidia-uvm"
