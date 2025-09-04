@@ -52,6 +52,8 @@ typedef enum
     BLOCK_PTE_OP_COUNT
 } block_pte_op_t;
 
+#define UVM_API_EVICT_BATCH_SIZE 256
+
 static NvU64 uvm_perf_authorized_cpu_fault_tracking_window_ns = 300000;
 
 static struct kmem_cache *g_uvm_va_block_cache __read_mostly;
@@ -141,71 +143,75 @@ static size_t va_space_calculate_rss(uvm_va_space_t *va_space, uvm_gpu_t *gpu) {
 
 static void block_destroy_gpu_state(uvm_va_block_t *block, uvm_va_block_context_t *block_context, uvm_gpu_id_t id);
 
+static size_t uvm_va_space_evict_batch(struct mm_struct *mm,
+        uvm_va_space_t *va_space,
+        uvm_gpu_t *gpu,
+        uvm_va_range_managed_t *managed_range,
+        size_t va_range_block_start_index,
+        size_t num_block) {
+    size_t batch_index;
+    uvm_va_block_t *va_block;
+    size_t total_evicted_bytes = 0;
+    uvm_va_block_t *swapped_va_blocks[UVM_API_EVICT_BATCH_SIZE] = {NULL};
+
+    for (batch_index = 0; batch_index < num_block; ++batch_index) {
+        va_block = uvm_va_range_block(managed_range, va_range_block_start_index + batch_index);
+        if (va_block) {
+            uvm_mutex_lock(&va_block->lock);
+            if (uvm_va_block_gpu_state_get(va_block, gpu->id)) {
+                if (block_evict_pages_from_gpu(va_block, gpu, mm, false) == NV_OK) {
+                    uvm_try_charge_gpu_memogy_cgroup(va_block, gpu->id, uvm_va_block_size(va_block), false, true);
+                    swapped_va_blocks[batch_index] = va_block;
+                }
+            }
+            uvm_mutex_unlock(&va_block->lock);
+        }
+    }
+
+    for (batch_index = 0; batch_index < num_block; ++batch_index) {
+        if (swapped_va_blocks[batch_index]) {
+            uvm_mutex_lock(&swapped_va_blocks[batch_index]->lock);
+            if (uvm_va_block_gpu_state_get(swapped_va_blocks[batch_index], gpu->id)) {
+                block_destroy_gpu_state(swapped_va_blocks[batch_index], uvm_va_space_block_context(va_space, NULL), gpu->id);
+                total_evicted_bytes += uvm_va_block_size(swapped_va_blocks[batch_index]);
+            }
+            uvm_mutex_unlock(&swapped_va_blocks[batch_index]->lock);
+        }
+    }
+
+    return total_evicted_bytes;
+}
+
 static NV_STATUS uvm_va_space_evict_size(uvm_va_space_t *va_space, uvm_gpu_t *gpu, size_t target_size) {
     struct mm_struct *mm;
     uvm_va_range_t *va_range;
     uvm_va_range_managed_t *managed_range;
-    uvm_va_block_t *va_block;
-    uvm_va_block_t **swapped_va_blocks;
-    uvm_va_block_gpu_state_t *gpu_state;
-    uvm_pmm_gpu_t *pmm = &gpu->pmm;
     size_t va_range_num_blocks;
     size_t block_index;
     size_t total_evicted_bytes = 0;
-    NV_STATUS status = NV_OK;
-
-    if (!pmm) {
-        return NV_ERR_INVALID_ARGUMENT;
-    }
 
     uvm_assert_rwsem_locked_write(&va_space->lock);
     mm = uvm_va_space_mm_retain_lock(va_space);
+
+    if (!mm)
+        return NV_ERR_INVALID_ARGUMENT;
 
     uvm_for_each_va_range(va_range, va_space) {
         managed_range = uvm_va_range_to_managed_or_null(va_range);
         if (managed_range) {
             va_range_num_blocks = uvm_va_range_num_blocks(managed_range);
-            swapped_va_blocks = uvm_kvmalloc(va_range_num_blocks * sizeof(uvm_va_block_t *));
-            for (block_index = 0; block_index < va_range_num_blocks; ++block_index) {
-                va_block = uvm_va_range_block(managed_range, block_index);
-                swapped_va_blocks[block_index] = va_block;
-                if (va_block) {
-                    uvm_mutex_lock(&va_block->lock);
-                    gpu_state = uvm_va_block_gpu_state_get(va_block, gpu->id);
-                    if (gpu_state) {
-                        status = block_evict_pages_from_gpu(va_block, gpu, mm, false);
-                        if (status == NV_OK) {
-                            total_evicted_bytes += uvm_va_block_size(va_block);
-                            uvm_try_charge_gpu_memogy_cgroup(va_block, gpu->id, uvm_va_block_size(va_block), false, true);
-                        }
-                    }
-                    uvm_mutex_unlock(&va_block->lock);
-                }
-
-                if (status != NV_OK || total_evicted_bytes >= target_size)
-                    break;
+            for (block_index = 0; block_index < va_range_num_blocks; block_index += UVM_API_EVICT_BATCH_SIZE) {
+                total_evicted_bytes += uvm_va_space_evict_batch(mm, va_space, gpu, managed_range, block_index,
+                        (block_index + UVM_API_EVICT_BATCH_SIZE) > va_range_num_blocks ? (va_range_num_blocks - block_index) : UVM_API_EVICT_BATCH_SIZE);
+                if (total_evicted_bytes >= target_size)
+                    goto exit;
             }
-
-            va_range_num_blocks = block_index;
-            for (block_index = 0; block_index < va_range_num_blocks; ++block_index) {
-                if (swapped_va_blocks[block_index]) {
-                    uvm_mutex_lock(&swapped_va_blocks[block_index]->lock);
-                    if (uvm_va_block_gpu_state_get(swapped_va_blocks[block_index], gpu->id))
-                        block_destroy_gpu_state(swapped_va_blocks[block_index], uvm_va_space_block_context(va_space, NULL), gpu->id);
-                    uvm_mutex_unlock(&swapped_va_blocks[block_index]->lock);
-                }
-            }
-
-            uvm_kvfree(swapped_va_blocks);
-
-            if (status != NV_OK || total_evicted_bytes >= target_size)
-                break;
         }
     }
 
 exit:
     uvm_va_space_mm_release_unlock(va_space, mm);
-    return status;
+    return NV_OK;
 }
 
 size_t uvm_debugfs_api_get_gpu_rss(uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id) {
