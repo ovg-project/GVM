@@ -8,4 +8,4 @@ SCHEDULER=${1:-xsched}
 # For diffusion, use low priority (0) for xsched
 source ${SCRIPT_DIR}/setup_scheduler.sh $SCHEDULER 0
 
-python diffusion.py --batch_size=1 --num_inference_steps=5000
+python diffusion.py --dataset_path datasets/vidprom.txt

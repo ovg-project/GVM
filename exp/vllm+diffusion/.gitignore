@@ -2,3 +2,4 @@ vllm_log/
 diffusion_outputs/
 BurstGPT*.csv
 ShareGPT*.json
+VidProM*.csv
