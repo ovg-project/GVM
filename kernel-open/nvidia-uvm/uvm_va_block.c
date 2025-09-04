@@ -146,6 +146,7 @@ static NV_STATUS uvm_va_space_evict_size(uvm_va_space_t *va_space, uvm_gpu_t *gp
     uvm_va_range_t *va_range;
     uvm_va_range_managed_t *managed_range;
     uvm_va_block_t *va_block;
+    uvm_va_block_t **swapped_va_blocks;
     uvm_va_block_gpu_state_t *gpu_state;
     uvm_pmm_gpu_t *pmm = &gpu->pmm;
     size_t va_range_num_blocks;
@@ -164,8 +165,10 @@ static NV_STATUS uvm_va_space_evict_size(uvm_va_space_t *va_space, uvm_gpu_t *gp
         managed_range = uvm_va_range_to_managed_or_null(va_range);
         if (managed_range) {
             va_range_num_blocks = uvm_va_range_num_blocks(managed_range);
+            swapped_va_blocks = uvm_kvmalloc(va_range_num_blocks * sizeof(uvm_va_block_t *));
             for (block_index = 0; block_index < va_range_num_blocks; ++block_index) {
                 va_block = uvm_va_range_block(managed_range, block_index);
+                swapped_va_blocks[block_index] = va_block;
                 if (va_block) {
                     uvm_mutex_lock(&va_block->lock);
                     gpu_state = uvm_va_block_gpu_state_get(va_block, gpu->id);
@@ -174,17 +177,29 @@ static NV_STATUS uvm_va_space_evict_size(uvm_va_space_t *va_space, uvm_gpu_t *gp
                         if (status == NV_OK) {
                             total_evicted_bytes += uvm_va_block_size(va_block);
                             uvm_try_charge_gpu_memogy_cgroup(va_block, gpu->id, uvm_va_block_size(va_block), false, true);
-                            if (uvm_va_block_gpu_state_get(va_block, gpu->id)) {
-                                block_destroy_gpu_state(va_block, uvm_va_space_block_context(va_space, NULL), gpu->id);
-                            }
                         }
                     }
                     uvm_mutex_unlock(&va_block->lock);
-                    if (status != NV_OK || total_evicted_bytes >= target_size) {
-                        goto exit;
-                    }
+                }
+
+                if (status != NV_OK || total_evicted_bytes >= target_size)
+                    break;
+            }
+
+            va_range_num_blocks = block_index;
+            for (block_index = 0; block_index < va_range_num_blocks; ++block_index) {
+                if (swapped_va_blocks[block_index]) {
+                    uvm_mutex_lock(&swapped_va_blocks[block_index]->lock);
+                    if (uvm_va_block_gpu_state_get(swapped_va_blocks[block_index], gpu->id))
+                        block_destroy_gpu_state(swapped_va_blocks[block_index], uvm_va_space_block_context(va_space, NULL), gpu->id);
+                    uvm_mutex_unlock(&swapped_va_blocks[block_index]->lock);
                 }
             }
+
+            uvm_kvfree(swapped_va_blocks);
+
+            if (status != NV_OK || total_evicted_bytes >= target_size)
+                break;
         }
     }
 
