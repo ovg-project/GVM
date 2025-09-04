@@ -10,9 +10,14 @@ setup_scheduler() {
 
     if [ -z "$SCHEDULER" ]; then
         echo "Usage: setup_scheduler <scheduler> [priority]"
-        echo "Scheduler: xsched, gvm"
+        echo "Scheduler: xsched, gvm, none"
         echo "Priority: 0 (low) or 1 (high) - default depends on scheduler"
         return 1
+    fi
+
+    if [ "$SCHEDULER" == "none" ]; then
+        echo "Using no scheduler"
+        return 0
     fi
 
     # Get the script directory (where this setup script is located)
@@ -49,7 +54,7 @@ setup_scheduler() {
 
     else
         echo "Invalid scheduler: $SCHEDULER"
-        echo "Valid schedulers: xsched, gvm"
+        echo "Valid schedulers: xsched, gvm, none"
         return 1
     fi
 
@@ -66,5 +71,7 @@ else
     # Script is being executed directly
     echo "This script should be sourced, not executed directly."
     echo "Usage: source setup_scheduler.sh <scheduler> [priority]"
+    echo "Scheduler: xsched, gvm, none"
+    echo "Priority: 0 (low) or 1 (high) - default depends on scheduler"
     exit 1
 fi

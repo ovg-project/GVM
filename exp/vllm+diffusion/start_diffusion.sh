@@ -2,7 +2,7 @@
 
 SCRIPT_DIR=$(cd $(dirname ${BASH_SOURCE[0]}) && pwd -P)
 
-SCHEDULER=${1:-xsched}
+SCHEDULER=${1:-none}
 
 # Source the standalone scheduler setup script
 # For diffusion, use low priority (0) for xsched

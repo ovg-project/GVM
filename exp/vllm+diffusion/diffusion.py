@@ -135,6 +135,7 @@ class DiffusionInferenceServer:
         self.results = []
         self.shutdown_requested = False
         self.processed_requests = 0
+        self.stream = torch.cuda.Stream()
 
     def init_pipeline(self):
         """Initialize the diffusion pipeline."""
@@ -188,16 +189,13 @@ class DiffusionInferenceServer:
         logger.info(f"Processing {request.request_id}: {request.prompt[:50]}...")
 
         try:
-            # Use existing generate_images function but simplified for single request
-            custom_stream = torch.cuda.Stream()
-
-            with torch.cuda.stream(custom_stream):
+            with torch.cuda.stream(self.stream):
                 images = self.pipeline(
                     prompt=[request.prompt],
                     num_inference_steps=self.config.num_inference_steps,
                     guidance_scale=self.config.guidance_scale,
                 ).images
-            custom_stream.synchronize()
+            self.stream.synchronize()
 
             end_time = time.time()
             inference_duration = end_time - start_time
