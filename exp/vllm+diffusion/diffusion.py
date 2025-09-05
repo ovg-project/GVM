@@ -11,6 +11,8 @@ from typing import List
 import torch
 from diffusers import StableDiffusion3Pipeline
 
+LOG_LEVEL = "INFO"
+DISABLE_PROGRESS_BAR = True
 
 class ColoredFormatter(logging.Formatter):
     """Custom formatter with colored log levels."""
@@ -55,7 +57,7 @@ def setup_logger(name: str = __name__) -> logging.Logger:
     if logger.handlers:
         return logger
 
-    log_level = os.getenv("GVM_DIFFUSION_LOG_LEVEL", "INFO")
+    log_level = os.getenv("GVM_DIFFUSION_LOG_LEVEL", LOG_LEVEL)
     level = getattr(logging, log_level.upper())
     logger.setLevel(level)
 
@@ -145,6 +147,7 @@ class DiffusionInferenceServer:
                 self.config.model_path, torch_dtype=self.config.torch_dtype
             )
         )
+        self.pipeline.set_progress_bar_config(disable=DISABLE_PROGRESS_BAR)
         self.pipeline = self.pipeline.to(self.config.device)
         logger.info("Pipeline initialized successfully.")
 
