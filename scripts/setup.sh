@@ -59,6 +59,9 @@ setup_llamafactory() {
         git clone --depth 1 https://github.com/hiyouga/LLaMA-Factory.git
         cd LLaMA-Factory
         uv pip install -e ".[torch,metrics]" --no-build-isolation
+        # both vLLM and llama-factory has peft version requirement, and we use
+        # 0.15.2 for both.
+        uv pip install "peft==0.15.2"
         deactivate
         popd
     else

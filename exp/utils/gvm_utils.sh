@@ -83,6 +83,10 @@ find_diffusion_pids() {
     find_pids "python.*diffusion\.py"
 }
 
+find_llamafactory_pids() {
+    find_pids ".*llamafactory.*"
+}
+
 
 kill_vllm() {
     local vllm_pids=$(find_vllm_pids)
@@ -94,6 +98,13 @@ kill_vllm() {
 kill_diffusion() {
     local diffusion_pids=$(find_diffusion_pids)
     for pid in $diffusion_pids; do
+        kill -9 $pid
+    done
+}
+
+kill_llamafactory() {
+    local llamafactory_pids=$(find_llamafactory_pids)
+    for pid in $llamafactory_pids; do
         kill -9 $pid
     done
 }
