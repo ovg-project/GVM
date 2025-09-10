@@ -57,7 +57,7 @@ private:
   // PyTorch retry logic
   std::atomic<bool> g_allow_next_overcommit{false};
   std::atomic<size_t> g_failed_allocation_size{0};
-  bool g_pytorch_retry_enabled = false;
+  bool g_pytorch_retry_enabled = true;
 
   // Constants
   static constexpr const char *kMemoryLimitEnvVar = "GVM_MEM_LIMIT_GB";

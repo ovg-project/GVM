@@ -98,10 +98,7 @@ bool MemoryManager::initMemoryLimit() {
 }
 
 bool MemoryManager::initUVMConnection() {
-  GVM_LOG_INFO("Initializing UVM connection...");
-
-  // First, ensure UVM is initialized by triggering CUDA runtime initialization
-  GVM_LOG_INFO("Triggering CUDA runtime initialization for UVM...");
+  GVM_LOG_DEBUG("Initializing UVM connection...");
 
   // Get the CUDA function caller instance
   CudaFuncCaller &cuda_caller = CudaFuncCaller::getInstance();
@@ -126,7 +123,7 @@ bool MemoryManager::initUVMConnection() {
     return false;
   }
 
-  GVM_LOG_INFO("CUDA runtime initialization successful");
+  GVM_LOG_DEBUG("CUDA runtime initialization successful");
   GVM_LOG_INFO_S << "GPU memory: " << free / (1024 * 1024) << "MB free / "
                  << total / (1024 * 1024) << "MB total";
 
@@ -137,7 +134,7 @@ bool MemoryManager::initUVMConnection() {
     return false;
   }
 
-  GVM_LOG_INFO_F("Found UVM file descriptor: %d", g_uvm_fd);
+  GVM_LOG_DEBUG_F("Found UVM file descriptor: %d", g_uvm_fd);
 
   // Set the memory limit via libgvmdrv
   gvm_set_gmemcg(g_uvm_fd, g_memory_limit);
@@ -195,9 +192,9 @@ void MemoryManager::recordAlloc(void *ptr, size_t size) {
 
   int64_t effective_limit =
       g_memory_limit > 0 ? g_memory_limit : g_cuda_mem_total;
-  // std::cout << "[MemoryManager] Total CUDA memory allocated: "
-  //           << g_cuda_mem_allocated / 1024 / 1024 << "MB / "
-  //           << effective_limit / 1024 / 1024 << "MB" << std::endl;
+  GVM_LOG_DEBUG_S << "Total CUDA memory allocated: "
+                  << g_cuda_mem_allocated / 1024 / 1024 << "MB / "
+                  << effective_limit / 1024 / 1024 << "MB";
 }
 
 size_t MemoryManager::recordDealloc(void *ptr) {
@@ -206,9 +203,9 @@ size_t MemoryManager::recordDealloc(void *ptr) {
     size_t size = it->second;
     g_cuda_mem_map.erase(it);
     g_cuda_mem_allocated -= size;
-    // std::cout << "[MemoryManager] Freed " << size / 1024 / 1024 << "MB, "
-    //           << "remaining: " << g_cuda_mem_allocated / 1024 / 1024 << "MB"
-    //           << std::endl;
+    GVM_LOG_DEBUG_S << "Freed " << size / 1024 / 1024 << "MB, "
+                    << "remaining: " << g_cuda_mem_allocated / 1024 / 1024
+                    << "MB";
     return size;
   }
   return 0;
