@@ -320,4 +320,10 @@ CUresult XStreamDestroy_v2(CUstream stream)
     return Driver::StreamDestroy_v2(stream);
 }
 
+CUresult XMemAlloc_v2(CUdeviceptr *dptr, size_t bytesize)
+{
+    XDEBG("XMemAlloc_v2(dptr: %p, bytesize: %zu)", dptr, bytesize);
+    return Driver::MemAllocManaged(dptr, bytesize, CU_MEM_ATTACH_GLOBAL);
+}
+
 } // namespace xsched::cuda

@@ -45,6 +45,7 @@ CUDA_SHIM_FUNC(MemsetD2D16Async, CudaMemsetD2D16Command, CUdeviceptr, dstDevice,
 CUDA_SHIM_FUNC(MemsetD2D32Async, CudaMemsetD2D32Command, CUdeviceptr, dstDevice, size_t, dstPitch, unsigned int, ui, size_t, Width, size_t, Height);
 CUDA_SHIM_FUNC(MemFreeAsync, CudaMemoryFreeCommand, CUdeviceptr, dptr);
 CUDA_SHIM_FUNC(MemAllocAsync, CudaMemoryAllocCommand, CUdeviceptr *, dptr, size_t, bytesize);
+CUresult XMemAlloc_v2(CUdeviceptr *dptr, size_t bytesize);
 
 ////////////////////////////// event related //////////////////////////////
 CUresult XEventQuery(CUevent event);
