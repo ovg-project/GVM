@@ -38,6 +38,7 @@
 #include "uvm_perf_thrashing.h"
 #include "uvm_gpu_non_replayable_faults.h"
 #include "uvm_ats_faults.h"
+#include "uvm_processors.h"
 #include "uvm_test.h"
 
 // The documentation at the beginning of uvm_gpu_non_replayable_faults.c
@@ -114,6 +115,150 @@ module_param(uvm_perf_fault_max_throttle_per_service, uint, S_IRUGO);
 
 static unsigned uvm_perf_fault_coalesce = 1;
 module_param(uvm_perf_fault_coalesce, uint, S_IRUGO);
+
+#define UVM_PERF_PROMOTE_2M_FAULTS_DEFAULT 1
+
+// Enable promotion of replayable GPU faults to 2MB chunks when safe so that
+// migrations and mappings align with eviction granularity.
+static unsigned uvm_perf_promote_2m_faults = UVM_PERF_PROMOTE_2M_FAULTS_DEFAULT;
+module_param(uvm_perf_promote_2m_faults, uint, S_IRUGO);
+
+static bool block_supports_2m_for_gpu_faults(uvm_va_block_t *va_block, uvm_processor_id_t gpu_id)
+{
+    uvm_va_space_t *va_space;
+    uvm_gpu_t *gpu;
+    uvm_gpu_va_space_t *gpu_va_space;
+    uvm_va_block_region_t block_region;
+    uvm_page_mask_t const *cpu_resident_mask;
+    uvm_cpu_chunk_t *cpu_chunk = NULL;
+    int cpu_nid = NUMA_NO_NODE;
+    int nid_iter;
+
+    if (!UVM_ID_IS_GPU(gpu_id))
+        return false;
+
+    if (!uvm_perf_promote_2m_faults)
+        return false;
+
+    if (uvm_va_block_is_hmm(va_block))
+        return false;
+
+    if (uvm_va_block_size(va_block) != UVM_PAGE_SIZE_2M)
+        return false;
+
+    block_region = uvm_va_block_region_from_block(va_block);
+
+    // CPU residency must cover the full block on a single NUMA node in order
+    // to issue a single 2MB DMA from host memory.
+    if (!uvm_processor_mask_test(&va_block->resident, UVM_ID_CPU))
+        return false;
+
+    for_each_possible_uvm_node(nid_iter) {
+        cpu_chunk = uvm_cpu_chunk_get_chunk_for_page(va_block, nid_iter, 0);
+        if (!cpu_chunk)
+            continue;
+
+        if (!uvm_va_block_cpu_is_region_resident_on(va_block, nid_iter, block_region))
+            continue;
+
+        cpu_nid = nid_iter;
+        break;
+    }
+
+    if (cpu_nid == NUMA_NO_NODE)
+        return false;
+
+    // All pages must reside on a contiguous 2MB chunk.
+    if (uvm_cpu_chunk_get_size(cpu_chunk) != UVM_PAGE_SIZE_2M)
+        return false;
+
+    cpu_resident_mask = uvm_va_block_resident_mask_get(va_block, UVM_ID_CPU, cpu_nid);
+    if (!uvm_page_mask_region_full(cpu_resident_mask, block_region))
+        return false;
+
+    // Ensure there is no residency on additional NUMA nodes (disjoint caching
+    // would break contiguity and require scatter/gather migration).
+    for_each_possible_uvm_node(nid_iter) {
+        if (nid_iter == cpu_nid)
+            continue;
+
+        if (!uvm_va_block_cpu_is_region_resident_on(va_block, nid_iter, block_region))
+            continue;
+
+        return false;
+    }
+
+    gpu = uvm_gpu_get(gpu_id);
+    if (!gpu)
+        return false;
+
+    va_space = uvm_va_block_get_va_space(va_block);
+    if (!va_space)
+        return false;
+
+    gpu_va_space = uvm_gpu_va_space_get(va_space, gpu);
+    if (!gpu_va_space)
+        return false;
+
+    return uvm_mmu_page_size_supported(&gpu_va_space->page_tables, UVM_PAGE_SIZE_2M);
+}
+
+static bool promote_fault_batch_to_2m(uvm_va_block_t *va_block,
+                                      uvm_service_block_context_t *service_block_context,
+                                      uvm_fault_access_type_t block_max_access_type)
+{
+    uvm_va_block_context_t *va_block_context;
+    uvm_processor_id_t residency;
+    uvm_page_mask_t *new_residency_mask;
+    uvm_page_mask_t *old_mask;
+    uvm_va_block_region_t block_region;
+    uvm_page_index_t page_index;
+
+    if (!uvm_perf_promote_2m_faults)
+        return false;
+
+    if (!service_block_context || !service_block_context->block_context)
+        return false;
+
+    va_block_context = service_block_context->block_context;
+
+    if (service_block_context->thrashing_pin_count != 0)
+        return false;
+
+    if (service_block_context->read_duplicate_count != 0)
+        return false;
+
+    if (uvm_processor_mask_get_count(&service_block_context->resident_processors) != 1)
+        return false;
+
+    residency = uvm_processor_mask_find_first_id(&service_block_context->resident_processors);
+
+    if (!block_supports_2m_for_gpu_faults(va_block, residency))
+        return false;
+
+    block_region = uvm_va_block_region_from_block(va_block);
+
+    new_residency_mask = &service_block_context->per_processor_masks[uvm_id_value(residency)].new_residency;
+
+    if (uvm_page_mask_region_full(new_residency_mask, block_region))
+        return false;
+
+    old_mask = &va_block_context->scratch_page_mask;
+    uvm_page_mask_copy(old_mask, new_residency_mask);
+
+    uvm_page_mask_region_fill(new_residency_mask, block_region);
+
+    service_block_context->region = block_region;
+
+    for_each_va_block_page_in_region(page_index, block_region) {
+        if (!uvm_page_mask_test(old_mask, page_index))
+            service_block_context->access_type[page_index] = block_max_access_type;
+    }
+
+    uvm_page_mask_zero(old_mask);
+
+    return true;
+}
 
 // This function is used for both the initial fault buffer initialization and
 // the power management resume path.
@@ -1393,6 +1538,9 @@ static NV_STATUS service_fault_batch_block_locked(uvm_gpu_t *gpu,
     uvm_va_space_t *va_space = uvm_va_block_get_va_space(va_block);
     const uvm_va_policy_t *policy;
     NvU64 end;
+    uvm_fault_access_type_t block_max_access_type = UVM_FAULT_ACCESS_TYPE_READ;
+    bool block_access_type_initialized = false;
+    bool promoted_to_2m = false;
 
     // Check that all uvm_fault_access_type_t values can fit into an NvU8
     BUILD_BUG_ON(UVM_FAULT_ACCESS_TYPE_COUNT > (int)(NvU8)-1);
@@ -1572,6 +1720,10 @@ static NV_STATUS service_fault_batch_block_locked(uvm_gpu_t *gpu,
         ++page_fault_count;
 
         block_context->access_type[page_index] = service_access_type;
+        if (!block_access_type_initialized || service_access_type > block_max_access_type) {
+            block_max_access_type = service_access_type;
+            block_access_type_initialized = true;
+        }
 
         if (page_index < first_page_index)
             first_page_index = page_index;
@@ -1582,8 +1734,15 @@ static NV_STATUS service_fault_batch_block_locked(uvm_gpu_t *gpu,
     // Apply the changes computed in the fault service block context, if there
     // are pages to be serviced
     if (page_fault_count > 0) {
-        block_context->region = uvm_va_block_region(first_page_index, last_page_index + 1);
+        if (block_access_type_initialized)
+            promoted_to_2m = promote_fault_batch_to_2m(va_block, block_context, block_max_access_type);
+
+        if (!promoted_to_2m)
+            block_context->region = uvm_va_block_region(first_page_index, last_page_index + 1);
         status = uvm_va_block_service_locked(gpu->id, va_block, va_block_retry, block_context);
+
+        if (promoted_to_2m)
+            replayable_faults->stats.num_promoted_2m_faults++;
     }
 
     *block_faults = i - first_fault_index;

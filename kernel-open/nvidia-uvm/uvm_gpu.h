@@ -402,6 +402,8 @@ typedef struct
             NvU64 num_replays;
 
             NvU64 num_replays_ack_all;
+
+            NvU64 num_promoted_2m_faults;
         } stats;
 
         // Number of uTLBs in the chip

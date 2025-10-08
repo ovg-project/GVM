@@ -2143,6 +2143,8 @@ static NV_STATUS block_populate_pages_cpu(uvm_va_block_t *block,
     uvm_page_index_t page_index;
     uvm_gpu_id_t id;
     int preferred_nid = block_context->make_resident.dest_nid;
+    bool prefer_full_block_2m = false;
+    bool attempted_full_block_2m = false;
 
     if (block_test && block_test->cpu_chunk_allocation_target_id != NUMA_NO_NODE)
         preferred_nid = block_test->cpu_chunk_allocation_target_id;
@@ -2195,6 +2197,16 @@ static NV_STATUS block_populate_pages_cpu(uvm_va_block_t *block,
     UVM_ASSERT(cpu_allocation_sizes >= PAGE_SIZE);
     UVM_ASSERT(cpu_allocation_sizes & PAGE_SIZE);
 
+    if (!uvm_va_block_is_hmm(block) &&
+        uvm_va_block_size(block) == UVM_PAGE_SIZE_2M &&
+        populate_region.first == 0 &&
+        populate_region.outer == uvm_va_block_num_cpu_pages(block) &&
+        uvm_page_mask_region_full(populate_page_mask, populate_region) &&
+        uvm_page_mask_region_empty(allocated_mask, populate_region) &&
+        (cpu_allocation_sizes & UVM_PAGE_SIZE_2M)) {
+        prefer_full_block_2m = true;
+    }
+
     for_each_va_block_page_in_region_mask(page_index, populate_page_mask, populate_region) {
         uvm_cpu_chunk_alloc_flags_t chunk_alloc_flags = alloc_flags;
         uvm_va_block_region_t region = populate_region;
@@ -2207,13 +2219,22 @@ static NV_STATUS block_populate_pages_cpu(uvm_va_block_t *block,
             continue;
         }
 
+retry_allocation:
         allocation_sizes = block_calculate_largest_alloc_size(block,
                                                               page_index,
                                                               allocated_mask,
-                                                              cpu_allocation_sizes,
+                                                              prefer_full_block_2m && !attempted_full_block_2m ?
+                                                                  UVM_PAGE_SIZE_2M : cpu_allocation_sizes,
                                                               &region);
-        if (allocation_sizes == UVM_CHUNK_SIZE_INVALID)
+        if (allocation_sizes == UVM_CHUNK_SIZE_INVALID) {
+            if (prefer_full_block_2m && !attempted_full_block_2m) {
+                attempted_full_block_2m = true;
+                prefer_full_block_2m = false;
+                goto retry_allocation;
+            }
+
             return NV_ERR_NO_MEMORY;
+        }
 
         // If not all pages in the allocation region are resident somewhere,
         // zero out the allocated page.
@@ -2236,9 +2257,18 @@ static NV_STATUS block_populate_pages_cpu(uvm_va_block_t *block,
             preferred_nid = NUMA_NO_NODE;
             block_context->make_resident.dest_nid = NUMA_NO_NODE;
         }
+        else if (status == NV_ERR_NO_MEMORY && prefer_full_block_2m && !attempted_full_block_2m) {
+            attempted_full_block_2m = true;
+            prefer_full_block_2m = false;
+            goto retry_allocation;
+        }
         else if (status != NV_OK) {
             return status;
         }
+
+        if (prefer_full_block_2m && !attempted_full_block_2m)
+            attempted_full_block_2m = true;
+        prefer_full_block_2m = false;
 
         // A smaller chunk than the maximum size may have been allocated, update the region accordingly.
         region = uvm_va_block_chunk_region(block, uvm_cpu_chunk_get_size(chunk), page_index);
