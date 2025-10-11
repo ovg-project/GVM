@@ -10,7 +10,10 @@ source ${SCRIPT_DIR}/../utils/gvm_utils.sh
 
 VLLM_PRIORITY=${1:-0}
 DIFFUSION_PRIORITY=${2:-8}
+VLLM_MEM_GB=${3:-0}
+DIFFUSION_MEM_GB=${4:-0}
 
+# Set vLLM priority
 set_vllm_priority() {
     echo "Looking for vLLM processes using GPU..."
 
@@ -30,6 +33,14 @@ set_vllm_priority() {
                 echo "Successfully set compute priority to $VLLM_PRIORITY for vLLM PID $pid"
             else
                 echo "Failed to set compute priority to $VLLM_PRIORITY for vLLM PID $pid"
+            fi
+            if [ $VLLM_MEM_GB -gt 0 ]; then
+                set_memory_limit_in_gb $pid $VLLM_MEM_GB
+                if [ $? -eq 0 ]; then
+                    echo "Successfully set memory limit to $VLLM_MEM_GB for vLLM PID $pid"
+                else
+                    echo "Failed to set memory limit to $VLLM_MEM_GB for vLLM PID $pid"
+                fi
             fi
         done
 
@@ -56,6 +67,15 @@ set_diffusion_priority() {
                 echo "Successfully set compute priority to $DIFFUSION_PRIORITY for Diffusion PID $pid"
             else
                 echo "Failed to set compute priority to $DIFFUSION_PRIORITY for Diffusion PID $pid"
+            fi
+
+            if [ $DIFFUSION_MEM_GB -gt 0 ]; then
+                set_memory_limit_in_gb $pid $DIFFUSION_MEM_GB
+                if [ $? -eq 0 ]; then
+                    echo "Successfully set memory limit to $DIFFUSION_MEM_GB for Diffusion PID $pid"
+                else
+                    echo "Failed to set memory limit to $DIFFUSION_MEM_GB for Diffusion PID $pid"
+                fi
             fi
         done
     fi
