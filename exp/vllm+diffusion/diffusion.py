@@ -3,11 +3,13 @@ import logging
 import os
 import signal
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List
 
 import torch
+import torch.cuda.nvtx as nvtx
 from diffusers import StableDiffusion3Pipeline
 
 LOG_LEVEL = "INFO"
@@ -127,6 +129,15 @@ class InferenceResult:
     queue_wait_time: float
 
 
+@contextmanager
+def nvtx_range(name: str, color: int = 0x00AEEF):
+    nvtx.range_push(name)
+    try:
+        yield
+    finally:
+        nvtx.range_pop()
+
+
 class DiffusionInferenceServer:
     """Offline diffusion inference server that processes requests sequentially."""
 
@@ -192,13 +203,29 @@ class DiffusionInferenceServer:
         logger.info(f"Processing {request.request_id}: {request.prompt[:50]}...")
 
         try:
-            with torch.cuda.stream(self.stream):
-                images = self.pipeline(
+            # ---- NVTX per-request range ----
+            prompt_label = request.prompt[:60].replace("\n", " ").replace("\r", "")
+            with nvtx_range(f"{request.request_id}: {prompt_label}"):
+                step_marks: List[int] = []
+
+                def on_step_end(pipe, step: int, timestep: int, callback_kwargs: dict):
+                    nvtx.mark(f"{request.request_id}/step={step} ts={int(timestep)}")
+                    step_marks.append(step)
+                    return callback_kwargs
+
+                call_kwargs = dict(
                     prompt=[request.prompt],
                     num_inference_steps=self.config.num_inference_steps,
                     guidance_scale=self.config.guidance_scale,
-                ).images
-            self.stream.synchronize()
+                    callback_on_step_end=on_step_end,
+                    callback_on_step_end_tensor_inputs=[],
+                )
+
+                with torch.cuda.stream(self.stream):
+                    images = self.pipeline(**call_kwargs).images
+
+                # Synchronize CUDA stream (kept inside NVTX range)
+                self.stream.synchronize()
 
             end_time = time.time()
             inference_duration = end_time - start_time
@@ -221,7 +248,10 @@ class DiffusionInferenceServer:
                 queue_wait_time=queue_wait_time,
             )
 
-            logger.info(f"Completed {request.request_id} in {inference_duration:.2f}s")
+            logger.info(
+                f"Completed {request.request_id} in {inference_duration:.2f}s "
+                f"({len(step_marks)} steps marked)"
+            )
             return result
 
         except Exception as e:
