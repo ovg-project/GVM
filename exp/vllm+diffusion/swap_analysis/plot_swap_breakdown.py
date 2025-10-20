@@ -8,8 +8,17 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 
-# Lighter-looking hatches
-mpl.rcParams["hatch.linewidth"] = 0.6  # thinner hatch strokes
+mpl.rcParams.update(
+    {
+        "font.size": 16,  # base font (affects most text)
+        "axes.labelsize": 16,  # "Time [s]" axis label
+        "axes.titlesize": 16,
+        "xtick.labelsize": 16,
+        "ytick.labelsize": 16,
+        "legend.fontsize": 16,
+        "hatch.linewidth": 0.6,
+    }
+)
 
 CASE_COLORS = ["#4C78A8", "#F58518", "#54A24B", "#B279A2"]
 
@@ -147,32 +156,44 @@ def _fmt_seconds(x: float) -> str:
         return f"{x:.4f}s"
 
 
+def _fmt_multiple(x: float, is_baseline: bool = False) -> str:
+    if is_baseline:
+        return "1x"  # no trailing .00 for the baseline
+    elif x >= 10:
+        return f"{x:.1f}x"
+    else:
+        return f"{x:.2f}x"
+
+
 def plot_stacked_bar(metrics: Dict[str, Any], out_path: str) -> None:
     total = float(metrics.get("total_runtime_seconds", 0.0))
     htod = float(metrics.get("pcie_io_htod_seconds", 0.0))
     dtoh = float(metrics.get("pcie_io_dtoh_seconds", 0.0))
     cpu = float(metrics.get("cpu_pagefault_handler_seconds", 0.0))
     pcie = htod + dtoh
-    other = max(0.0, total - (pcie + cpu))
 
+    diffusion = max(0.0, total - (pcie + cpu))
+    if diffusion <= 0:
+        diffusion = total if total > 0 else 1.0  # safe fallback
+
+    # Normalize everything by diffusion
     segs = [
-        ("Diffusion Inference", other, ".", CASE_COLORS[3]),
-        ("CPU Page-Fault handler", cpu, "x", CASE_COLORS[2]),
-        ("PCIe I/O DtoH", dtoh, "\\", CASE_COLORS[1]),
-        ("PCIe I/O HtoD", htod, "/", CASE_COLORS[0]),
+        ("Diffusion Inference", diffusion / diffusion, ".", CASE_COLORS[3]),
+        ("CPU Page-Fault handler", cpu / diffusion, "x", CASE_COLORS[2]),
+        ("PCIe I/O DtoH", dtoh / diffusion, "\\", CASE_COLORS[1]),
+        ("PCIe I/O HtoD", htod / diffusion, "/", CASE_COLORS[0]),
     ]
 
-    fig, ax = plt.subplots(figsize=(8.5, 2.6))
-    plt.subplots_adjust(bottom=0.38, top=0.83)
+    fig, ax = plt.subplots(figsize=(8.5, 3.0))
+    plt.subplots_adjust(bottom=0.32, top=0.88)
 
     ylab = ["Run"]
     left = 0.0
-    text_pad = 0.05
 
     for label, width, hatch, color in segs:
         if width <= 0:
             continue
-        bars = ax.barh(
+        ax.barh(
             ylab,
             [width],
             left=left,
@@ -182,22 +203,10 @@ def plot_stacked_bar(metrics: Dict[str, Any], out_path: str) -> None:
             linewidth=1.0,
             label=label,
         )
-        rect = bars.patches[0]
-        xmid = rect.get_x() + rect.get_width() / 2.0
-        y_top = rect.get_y() + rect.get_height() + text_pad
-        ax.text(
-            xmid,
-            y_top,
-            _fmt_seconds(width),
-            ha="center",
-            va="bottom",
-            fontsize=9,
-            clip_on=False,
-        )
         left += width
 
-    ax.set_xlabel("Time [s]")
-    ax.set_xlim(0, max(total, left) * 1.05)
+    ax.set_xlabel("Normalized Time (× Diffusion Inference)")
+    ax.set_xlim(0, max(left, 1.0) * 1.05)
     ax.set_yticks([])
     ax.margins(y=0.35)
 
@@ -214,17 +223,18 @@ def plot_stacked_bar(metrics: Dict[str, Any], out_path: str) -> None:
     ]
     ax.legend(
         handles=legend_elems,
-        loc="upper center",
-        ncol=4,
-        bbox_to_anchor=(0.5, -0.28),
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
         frameon=False,
         handlelength=2.2,
         handleheight=1.2,
-        borderpad=0.3,
-        labelspacing=0.6,
+        borderpad=0.5,
+        labelspacing=0.8,
     )
 
+    fig.subplots_adjust(right=0.78)
     fig.tight_layout()
+
     if out_path:
         fig.savefig(out_path, dpi=200, bbox_inches="tight")
     else:
