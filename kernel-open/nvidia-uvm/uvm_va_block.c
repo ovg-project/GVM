@@ -3834,7 +3834,7 @@ static void block_mark_memory_used(uvm_va_block_t *block, uvm_processor_id_t id)
         uvm_parent_gpu_supports_eviction(gpu->parent)) {
         // The chunk has to be there if this GPU is resident
         UVM_ASSERT(uvm_processor_mask_test(&block->resident, id));
-        uvm_pmm_gpu_mark_root_chunk_used(&gpu->pmm, uvm_va_block_gpu_state_get(block, gpu->id)->chunks[0]);
+        uvm_pmm_gpu_mark_root_chunk_used(&gpu->pmm, uvm_va_block_gpu_state_get(block, gpu->id)->chunks[0], block);
     }
 }
 
