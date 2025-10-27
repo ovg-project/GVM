@@ -160,7 +160,7 @@ static size_t uvm_va_space_evict_batch(struct mm_struct *mm,
             uvm_mutex_lock(&va_block->lock);
             if (uvm_va_block_gpu_state_get(va_block, gpu->id)) {
                 if (block_evict_pages_from_gpu(va_block, gpu, mm, false) == NV_OK) {
-                    uvm_try_charge_gpu_memogy_cgroup(va_block, gpu->id, uvm_va_block_size(va_block), false, true);
+                    uvm_try_charge_gpu_memory_cgroup(va_block, gpu->id, uvm_va_block_size(va_block), false, true);
                     swapped_va_blocks[batch_index] = va_block;
                 }
             }
@@ -311,7 +311,7 @@ out:
 }
 EXPORT_SYMBOL_GPL(uvm_linux_api_charge_gpu_memory_high);
 
-int uvm_try_charge_gpu_memogy_cgroup(uvm_va_block_t *block, uvm_gpu_id_t gpu_id, size_t size, bool uncharge, bool swap) {
+int uvm_try_charge_gpu_memory_cgroup(uvm_va_block_t *block, uvm_gpu_id_t gpu_id, size_t size, bool uncharge, bool swap) {
     uvm_va_space_t *va_space;
     if (!block)
         return -EINVAL;
@@ -2402,7 +2402,7 @@ static NV_STATUS block_alloc_gpu_chunk(uvm_va_block_t *block,
     *out_gpu_chunk = gpu_chunk;
 out:
     if (status == NV_OK)
-        uvm_try_charge_gpu_memogy_cgroup(block, gpu->id, size, false, false);
+        uvm_try_charge_gpu_memory_cgroup(block, gpu->id, size, false, false);
     return status;
 }
 
@@ -4314,7 +4314,7 @@ static NV_STATUS zero_destination_mem_if_needed(uvm_va_block_t *block,
          (uvm_parent_gpu_peer_link_type(src_gpu->parent, dst_gpu->parent) < UVM_GPU_LINK_NVLINK_5)) &&
         uvm_gpu_get_injected_nvlink_error(src_gpu) == NV_OK)
         return NV_OK;
-        
+
     for_each_va_block_page_in_region_mask(page_index, copy_mask, region) {
         block_phys_page_t dst_phys_page = block_phys_page(dst_id, NUMA_NO_NODE, page_index);
         uvm_gpu_chunk_t *dst_chunk = block_phys_page_chunk(block, dst_phys_page, NULL);
@@ -4808,7 +4808,7 @@ static NV_STATUS block_copy_resident_pages_mask(uvm_va_block_t *block,
             }
             if (block_context->make_resident.cause == UVM_MAKE_RESIDENT_CAUSE_REPLAYABLE_FAULT) {
                 if (UVM_ID_IS_GPU(dst_id) && *copied_pages_out > 0)
-                    uvm_try_charge_gpu_memogy_cgroup(block, dst_id, *copied_pages_out * PAGE_SIZE, true, true);
+                    uvm_try_charge_gpu_memory_cgroup(block, dst_id, *copied_pages_out * PAGE_SIZE, true, true);
             }
         }
         else {

@@ -682,7 +682,7 @@ int uvm_linux_api_charge_gpu_memory_high(struct task_struct *task, int fd, u64 c
 
 size_t uvm_linux_api_get_gpu_rss(struct task_struct *task, int fd);
 
-int uvm_try_charge_gpu_memogy_cgroup(uvm_va_block_t *block, uvm_gpu_id_t gpu_id, size_t size, bool uncharge, bool swap);
+int uvm_try_charge_gpu_memory_cgroup(uvm_va_block_t *block, uvm_gpu_id_t gpu_id, size_t size, bool uncharge, bool swap);
 
 // Return the va_space pointer of the given block or NULL if the block is dead.
 // Locking: This can be called while holding either the block lock or just the

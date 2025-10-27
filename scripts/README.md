@@ -10,7 +10,7 @@
 ## Compile
 
 ```bash
-./comile_modules.sh
+./compile_modules.sh
 ```
 
 ## Install/uninstall kernel modules
@@ -20,4 +20,3 @@
 ./redeploy_modules.sh  # uninstall previous kernel modules and re-deploy them
 ./uninstall_modules.sh  # uninstall previous kernel modules
 ```
-
