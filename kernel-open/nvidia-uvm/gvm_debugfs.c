@@ -144,7 +144,7 @@ static ssize_t gvm_process_memory_priority_write(struct file *file, const char _
     if (error != 0)
         return error;
 
-    if (priority > 2) {
+    if (priority != 0 && priority != 1) {
         UVM_ERR_PRINT("priority should be 0 or 1 but got %lu\n", priority);
         return -EINVAL;
     }
