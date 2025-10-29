@@ -17,7 +17,7 @@ source ${SCRIPT_DIR}/../utils/setup_scheduler.sh $SCHEDULER 1
 
 vllm serve meta-llama/Llama-3.2-3B \
   --gpu-memory-utilization ${MEMORY_UTILIZATION} \
-  --max-model-len 81920 \
+  --max-model-len 8192 \
   --enforce-eager \
   ${LOAD_FORMAT} \
   --disable-log-requests

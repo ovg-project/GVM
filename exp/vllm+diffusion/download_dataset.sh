@@ -12,7 +12,7 @@ check_and_download_sharegpt() {
     if [ ! -f "ShareGPT_V3_unfiltered_cleaned_split.json" ]; then
         wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
     fi
-    popd $DATASET_DIR
+    popd
 }
 
 check_and_download_burstgpt() {
@@ -20,7 +20,7 @@ check_and_download_burstgpt() {
     if [ ! -f "BurstGPT_1.csv" ]; then
         wget https://github.com/HPMLL/BurstGPT/releases/download/v1.1/BurstGPT_1.csv
     fi
-    popd $DATASET_DIR
+    popd
 }
 
 check_and_download_vidprom() {
@@ -28,7 +28,7 @@ check_and_download_vidprom() {
     if [ ! -f "VidProM_unique_example.csv" ]; then
         wget https://huggingface.co/datasets/WenhaoWang/VidProM/raw/main/example/VidProM_unique_example.csv
     fi
-    popd $DATASET_DIR
+    popd
 }
 
 check_and_download_sharegpt
