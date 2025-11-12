@@ -1221,6 +1221,32 @@ typedef struct
     NV_STATUS           rmStatus; // OUT
 } UVM_SET_GMEMCG_PARAMS;
 
+typedef enum
+{
+    UVM_SUBMIT_KERNEL_EVENT = 0,
+    UVM_END_KERNEL_EVENT,
+
+    UVM_EVENT_TYPE_COUNT
+} UVM_EVENT_TYPE;
+
+typedef enum {
+    UVM_ADD_EVENT_COUNT = 0,
+    UVM_SET_EVENT_COUNT,
+
+    UVM_UPDATE_EVENT_COUNT_TYPE_COUNT
+} UVM_UPDATE_EVENT_COUNT_TYPE;
+
+#define UVM_UPDATE_EVENT_COUNT                                        UVM_IOCTL_BASE(84)
+typedef struct
+{
+    NvProcessorUuid uuid;
+    UVM_EVENT_TYPE type;
+    UVM_UPDATE_EVENT_COUNT_TYPE op;
+    NvU64 value;
+
+    NV_STATUS rmStatus;
+} UVM_UPDATE_EVENT_COUNT_PARAMS;
+
 //
 // Temporary ioctls which should be removed before UVM 8 release
 // Number backwards from 2047 - highest custom ioctl function number

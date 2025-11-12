@@ -30,6 +30,7 @@ struct gvm_gpu_debugfs {
     struct dentry *compute_realtime;     // compute.realtime file
     struct dentry *compute_interleave_level;     // compute.interleave_level file
     struct dentry *compute_current;  // compute.current file (read-only)
+    struct dentry *gcgroup_stat;  // gcgroup.stat file (read-only)
     pid_t pid;                       // Process ID
     uvm_gpu_id_t gpu_id;                      // GPU ID
 };
@@ -74,5 +75,5 @@ size_t sum_gpu_memcg_current_all(uvm_gpu_id_t gpu_id);
 void calculate_gpu_memcg_recommend_all(uvm_gpu_id_t gpu_id);
 void signal_gpu_memcg_current_over_recommend_all(uvm_gpu_id_t gpu_id);
 
-NV_STATUS gvm_update_event_count(UVM_UPDATE_EVENT_COUNT_PARAMS *params, uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id)
+NV_STATUS gvm_update_event_count(UVM_UPDATE_EVENT_COUNT_PARAMS *params, uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id);
 #endif  // _GVM_DEBUGFS_H

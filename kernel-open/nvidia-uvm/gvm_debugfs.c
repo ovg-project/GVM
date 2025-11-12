@@ -524,6 +524,25 @@ static int gvm_process_compute_current_show(struct seq_file *m, void *data)
     return 0;
 }
 
+static int gvm_process_gcgroup_stat_show(struct seq_file *m, void *data)
+{
+    struct gvm_gpu_debugfs *gpu_debugfs = m->private;
+    uvm_va_space_t *va_space = _gvm_find_va_space_by_pid(gpu_debugfs->pid);
+
+    if (!va_space)
+        return -ENOENT;
+
+    UVM_ASSERT(va_space->gpu_cgroup != NULL);
+
+    size_t nr_submitted_kernels = (size_t)atomic64_read(&(va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].nr_submitted_kernels));
+    size_t nr_ended_kernels = (size_t)atomic64_read(&(va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].nr_ended_kernels));
+    seq_printf(m, "nr_submitted_kernels: %zu\nnr_ended_kernels: %zu\nnr_pending_kernels: %zu\n",
+            nr_submitted_kernels, nr_ended_kernels,
+            (nr_submitted_kernels > nr_ended_kernels) ? nr_submitted_kernels - nr_ended_kernels : 0);
+
+    return 0;
+}
+
 //
 // File operation structures
 //
@@ -650,6 +669,18 @@ static int gvm_process_compute_current_open(struct inode *inode, struct file *fi
 
 static const struct file_operations gvm_process_compute_current_fops = {
     .open = gvm_process_compute_current_open,
+    .read = seq_read,
+    .llseek = seq_lseek,
+    .release = single_release,
+};
+
+static int gvm_process_gcgroup_stat_open(struct inode *inode, struct file *file)
+{
+    return single_open(file, gvm_process_gcgroup_stat_show, inode->i_private);
+}
+
+static const struct file_operations gvm_process_gcgroup_stat_fops = {
+    .open = gvm_process_gcgroup_stat_open,
     .read = seq_read,
     .llseek = seq_lseek,
     .release = single_release,
@@ -905,6 +936,14 @@ int gvm_debugfs_create_gpu_dir(pid_t pid, uvm_gpu_id_t gpu_id)
         debugfs_create_file("compute.current", 0444, gpu_debugfs->gpu_dir, gpu_debugfs,
                             &gvm_process_compute_current_fops);
     if (!gpu_debugfs->compute_current) {
+        ret = -ENOMEM;
+        goto cleanup;
+    }
+
+    gpu_debugfs->gcgroup_stat =
+        debugfs_create_file("gcgroup.stat", 0444, gpu_debugfs->gpu_dir, gpu_debugfs,
+                            &gvm_process_gcgroup_stat_fops);
+    if (!gpu_debugfs->gcgroup_stat) {
         ret = -ENOMEM;
         goto cleanup;
     }
@@ -1349,4 +1388,30 @@ void signal_gpu_memcg_current_over_recommend_all(uvm_gpu_id_t gpu_id) {
         UVM_INFO_PRINT("Kill pid %d with signal %d\n", pids[index], SIGRTMIN+17);
         kill_pid(pid_struct, SIGRTMIN+17, 1);
     }
+}
+
+NV_STATUS gvm_update_event_count(UVM_UPDATE_EVENT_COUNT_PARAMS *params, uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id) {
+    UVM_ASSERT(va_space->gpu_cgroup);
+
+    if (params->type == UVM_SUBMIT_KERNEL_EVENT) {
+        if (params->op == UVM_ADD_EVENT_COUNT) {
+            atomic64_add(params->value, &va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].nr_submitted_kernels);
+        } else if (params->op == UVM_SET_EVENT_COUNT) {
+            atomic64_set(&va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].nr_submitted_kernels, params->value);
+        } else {
+            return NV_ERR_INVALID_ARGUMENT;
+        }
+    } else if (params->type == UVM_END_KERNEL_EVENT) {
+        if (params->op == UVM_ADD_EVENT_COUNT) {
+            atomic64_add(params->value, &va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].nr_ended_kernels);
+        } else if (params->op == UVM_SET_EVENT_COUNT) {
+            atomic64_set(&va_space->gpu_cgroup[uvm_id_gpu_index(gpu_id)].nr_ended_kernels, params->value);
+        } else {
+            return NV_ERR_INVALID_ARGUMENT;
+        }
+    } else {
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+
+    return NV_OK;
 }

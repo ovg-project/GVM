@@ -1391,6 +1391,24 @@ static NV_STATUS uvm_api_set_gmemcg(UVM_SET_GMEMCG_PARAMS *params, struct file *
     return NV_OK;
 }
 
+static NV_STATUS uvm_api_update_event_count(UVM_UPDATE_EVENT_COUNT_PARAMS *params, struct file *filp)
+{
+    uvm_va_space_t *va_space = uvm_va_space_get(filp);
+    uvm_gpu_t *gpu;
+
+    if (!va_space) {
+        printk(KERN_ERR "Failed to find va_space\n");
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+
+    gpu = uvm_va_space_get_gpu_by_uuid(va_space, &params->uuid);
+    if (!gpu) {
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+
+    return gvm_update_event_count(params, va_space, gpu->id);
+}
+
 static long uvm_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
     switch (cmd)
@@ -1447,6 +1465,7 @@ static long uvm_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_CTRL_CMD_OPERATE_CHANNEL_GROUP,  uvm_api_ctrl_cmd_operate_gr_channel_group);
         UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_CTRL_CMD_OPERATE_CHANNEL,        uvm_api_ctrl_cmd_operate_gr_channel);
         UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_SET_GMEMCG,                      uvm_api_set_gmemcg);
+        UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_UPDATE_EVENT_COUNT,              uvm_api_update_event_count);
     }
 
     // Try the test ioctls if none of the above matched
