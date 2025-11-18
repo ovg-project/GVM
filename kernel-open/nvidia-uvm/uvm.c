@@ -1051,7 +1051,14 @@ static NV_STATUS uvm_api_pageable_mem_access(UVM_PAGEABLE_MEM_ACCESS_PARAMS *par
 
 static NV_STATUS uvm_api_is_initialized(UVM_IS_INITIALIZED_PARAMS *params, struct file *filp)
 {
-    params->initialized = (uvm_fd_va_space(filp) != NULL);
+    uvm_va_space_t *va_space = uvm_fd_va_space(filp);
+
+    if (!va_space) {
+        params->initialized = false;
+        return NV_OK;
+    }
+
+    params->initialized = (uvm_va_space_get_gpu_by_uuid(va_space, &params->uuid) != NULL);
     return NV_OK;
 }
 

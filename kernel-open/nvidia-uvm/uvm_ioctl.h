@@ -1124,6 +1124,7 @@ typedef struct
 #define UVM_IS_INITIALIZED                                            UVM_IOCTL_BASE(80)
 typedef struct
 {
+    NvProcessorUuid uuid;         // IN
     NvBool          initialized; // OUT
     NV_STATUS       rmStatus;    // OUT
 } UVM_IS_INITIALIZED_PARAMS;
