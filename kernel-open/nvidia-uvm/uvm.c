@@ -1242,13 +1242,15 @@ int uvm_debugfs_api_schedule_task(uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id,
             }
 
             if (preempt) {
-                status = nvUvmInterfacePreemptChannelGroup(&user_channel_group->parent->uuid,
+                status = nvUvmInterfacePreemptChannelGroup(gpu_va_space->duped_gpu_va_space,
+                                                           &user_channel_group->parent->uuid,
                                                            user_channel_group->group_id,
                                                            user_channel_group->runlist_id);
             } else {
-                status = nvUvmInterfaceRescheduleChannelGroup(&user_channel_group->parent->uuid,
-                                                           user_channel_group->group_id,
-                                                           user_channel_group->runlist_id);
+                status = nvUvmInterfaceRescheduleChannelGroup(gpu_va_space->duped_gpu_va_space,
+                                                              &user_channel_group->parent->uuid,
+                                                              user_channel_group->group_id,
+                                                              user_channel_group->runlist_id);
             }
             if (status != NV_OK) {
                 return status;

@@ -1882,11 +1882,13 @@ NV_STATUS nvUvmInterfaceCtrlCmdOperateChannel(void *retainedChannel,
                                               NvP64 pParams,
                                               NvU32 dataSize);
 
-NV_STATUS nvUvmInterfacePreemptChannelGroup(NvProcessorUuid *uuid,
+NV_STATUS nvUvmInterfacePreemptChannelGroup(uvmGpuAddressSpaceHandle vaSpace,
+                                            NvProcessorUuid *uuid,
                                             NvU32 tsgId,
                                             NvU32 runlistId);
 
-NV_STATUS nvUvmInterfaceRescheduleChannelGroup(NvProcessorUuid *uuid,
+NV_STATUS nvUvmInterfaceRescheduleChannelGroup(uvmGpuAddressSpaceHandle vaSpace,
+                                               NvProcessorUuid *uuid,
                                                NvU32 tsgId,
                                                NvU32 runlistId);
 

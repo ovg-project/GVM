@@ -1778,25 +1778,27 @@ NV_STATUS nvUvmInterfaceCtrlCmdOperateChannel(void *retainedChannel,
 }
 EXPORT_SYMBOL(nvUvmInterfaceCtrlCmdOperateChannel);
 
-NV_STATUS nvUvmInterfacePreemptChannelGroup(NvProcessorUuid *uuid,
+NV_STATUS nvUvmInterfacePreemptChannelGroup(uvmGpuAddressSpaceHandle vaSpace,
+                                            NvProcessorUuid *uuid,
                                             NvU32 tsgId,
                                             NvU32 runlistId)
 {
     NV_STATUS status;
     nvidia_stack_t *sp = nvUvmGetSafeStack();
-    status = rm_gpu_ops_preempt_channel_group(sp, uuid, tsgId, runlistId);
+    status = rm_gpu_ops_preempt_channel_group(sp, (gpuAddressSpaceHandle)vaSpace, uuid, tsgId, runlistId);
     nvUvmFreeSafeStack(sp);
     return status;
 }
 EXPORT_SYMBOL(nvUvmInterfacePreemptChannelGroup);
 
-NV_STATUS nvUvmInterfaceRescheduleChannelGroup(NvProcessorUuid *uuid,
+NV_STATUS nvUvmInterfaceRescheduleChannelGroup(uvmGpuAddressSpaceHandle vaSpace,
+                                               NvProcessorUuid *uuid,
                                                NvU32 tsgId,
                                                NvU32 runlistId)
 {
     NV_STATUS status;
     nvidia_stack_t *sp = nvUvmGetSafeStack();
-    status = rm_gpu_ops_reschedule_channel_group(sp, uuid, tsgId, runlistId);
+    status = rm_gpu_ops_reschedule_channel_group(sp, (gpuAddressSpaceHandle)vaSpace, uuid, tsgId, runlistId);
     nvUvmFreeSafeStack(sp);
     return status;
 }

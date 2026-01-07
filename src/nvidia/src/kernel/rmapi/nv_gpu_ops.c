@@ -11475,17 +11475,26 @@ static NV_STATUS getChannelHwState(RM_API *pRmApi, KernelChannel *pKernelChannel
     return NV_OK;
 }
 
-NV_STATUS nvGpuOpsPreemptChannelGroup(NvProcessorUuid *uuid,
+NV_STATUS nvGpuOpsPreemptChannelGroup(struct gpuAddressSpace *vaSpace,
+                                      NvProcessorUuid *uuid,
                                       NvU32 tsgId,
                                       NvU32 runlistId)
 {
-    NV_STATUS status = NV_OK;
-    RM_API *pRmApi = rmapiGetInterface(RMAPI_EXTERNAL_KERNEL);
+    nvGpuOpsLockSet acquiredLocks;
+    THREAD_STATE_NODE threadState;
     OBJGPU *pGpu;
     KernelFifo *pKernelFifo;
-    RsResourceRef *pResourceRef;
+    RsResourceRef *pChanGrpApiRef;
+    RsResourceRef *pChanRef;
     KernelChannelGroup *pKernelChannelGroup;
     KernelChannelGroupApi *pKernelChannelGroupApi;
+    CHANNEL_NODE *pChanNode;
+    CHANNEL_LIST *pChanList;
+
+    NV_STATUS status = NV_OK;
+    RM_API *pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
+    NVA06C_CTRL_PREEMPT_PARAMS preemptParams = { 0 };
+    NV2080_CTRL_FIFO_DISABLE_CHANNELS_PARAMS disableChannelsParams = { 0 };
 
     pGpu = gpumgrGetGpuFromUuid(uuid->uuid,
         DRF_DEF(2080_GPU_CMD, _GPU_GET_GID_FLAGS, _TYPE, _SHA1) |
@@ -11501,33 +11510,89 @@ NV_STATUS nvGpuOpsPreemptChannelGroup(NvProcessorUuid *uuid,
     if (!pKernelChannelGroup)
         return NV_ERR_INVALID_ARGUMENT;
 
-    pKernelChannelGroupApi = pKernelChannelGroup->pChanList->pHead->pKernelChannel->pKernelChannelGroupApi;
+    if (!RM_ENGINE_TYPE_IS_GR(pKernelChannelGroup->engineType))
+        return NV_ERR_INVALID_ARGUMENT;
+
+    if (listCount(&pKernelChannelGroup->apiObjList) == 0)
+        return NV_ERR_INVALID_OBJECT;
+
+    pKernelChannelGroupApi = *listHead(&pKernelChannelGroup->apiObjList);
     if (!pKernelChannelGroupApi)
         return NV_ERR_INVALID_OBJECT;
 
-    // TODO: Acquired because serverutilGetResourceRef expects RMAPI lock. Necessary?
-    status = rmapiLockAcquire(RMAPI_LOCK_FLAGS_READ, RM_LOCK_MODULES_GPU_OPS);
-    if (status != NV_OK)
-        return status;
-    status = serverutilGetResourceRef(RES_GET_CLIENT_HANDLE(pKernelChannelGroupApi), RES_GET_HANDLE(pKernelChannelGroupApi), &pResourceRef);
-    rmapiLockRelease();
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
     if (status != NV_OK)
         return status;
 
-    return NV_OK;
+    status = _nvGpuOpsLocksAcquireAll(RMAPI_LOCK_FLAGS_READ, RES_GET_CLIENT_HANDLE(pKernelChannelGroupApi), NULL, &acquiredLocks);
+    if (status != NV_OK)
+        goto tscleanup;
+
+    status = serverutilGetResourceRef(RES_GET_CLIENT_HANDLE(pKernelChannelGroupApi), RES_GET_HANDLE(pKernelChannelGroupApi), &pChanGrpApiRef);
+    if (status != NV_OK)
+        goto lockcleanup;
+
+    disableChannelsParams.bDisable = NV_TRUE;
+    disableChannelsParams.numChannels = 0;
+    disableChannelsParams.bOnlyDisableScheduling = NV_TRUE;
+    disableChannelsParams.bRewindGpPut = NV_FALSE;
+    disableChannelsParams.pRunlistPreemptEvent = NULL;
+
+    pChanList = pKernelChannelGroup->pChanList;
+    for (pChanNode = pChanList->pHead; pChanNode; pChanNode = pChanNode->pNext) {
+        status = serverutilGetResourceRef(RES_GET_CLIENT_HANDLE(pChanNode->pKernelChannel), RES_GET_HANDLE(pChanNode->pKernelChannel), &pChanRef);
+        if (status != NV_OK)
+            continue;
+
+        disableChannelsParams.hClientList[disableChannelsParams.numChannels] = RES_GET_CLIENT_HANDLE(pChanNode->pKernelChannel);
+        disableChannelsParams.hChannelList[disableChannelsParams.numChannels] = RES_GET_HANDLE(pChanNode->pKernelChannel);
+        disableChannelsParams.numChannels += 1;
+    }
+
+    NV_ASSERT_OK(
+        pRmApi->Control(pRmApi,
+                        vaSpace->device->session->handle,
+                        vaSpace->device->subhandle,
+                        NV2080_CTRL_CMD_FIFO_DISABLE_CHANNELS,
+                        &disableChannelsParams,
+                        sizeof(disableChannelsParams)));
+
+    preemptParams.bWait = NV_TRUE;
+    preemptParams.bManualTimeout = NV_FALSE;
+    NV_ASSERT_OK(
+        pRmApi->Control(pRmApi,
+                        RES_GET_CLIENT_HANDLE(pKernelChannelGroupApi),
+                        RES_GET_HANDLE(pKernelChannelGroupApi),
+                        NVA06C_CTRL_CMD_PREEMPT,
+                        &preemptParams,
+                        sizeof(preemptParams)));
+
+lockcleanup:
+    _nvGpuOpsLocksRelease(&acquiredLocks);
+tscleanup:
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return status;
 }
 
-NV_STATUS nvGpuOpsRescheduleChannelGroup(NvProcessorUuid *uuid,
+NV_STATUS nvGpuOpsRescheduleChannelGroup(struct gpuAddressSpace *vaSpace,
+                                         NvProcessorUuid *uuid,
                                          NvU32 tsgId,
                                          NvU32 runlistId)
 {
-    NV_STATUS status = NV_OK;
-    RM_API *pRmApi = rmapiGetInterface(RMAPI_EXTERNAL_KERNEL);
+    nvGpuOpsLockSet acquiredLocks;
+    THREAD_STATE_NODE threadState;
     OBJGPU *pGpu;
     KernelFifo *pKernelFifo;
-    RsResourceRef *pResourceRef;
+    RsResourceRef *pChanGrpApiRef;
+    RsResourceRef *pChanRef;
     KernelChannelGroup *pKernelChannelGroup;
     KernelChannelGroupApi *pKernelChannelGroupApi;
+    CHANNEL_NODE *pChanNode;
+    CHANNEL_LIST *pChanList;
+
+    NV_STATUS status = NV_OK;
+    RM_API *pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
+    NV2080_CTRL_FIFO_DISABLE_CHANNELS_PARAMS disableChannelsParams = { 0 };
 
     pGpu = gpumgrGetGpuFromUuid(uuid->uuid,
         DRF_DEF(2080_GPU_CMD, _GPU_GET_GID_FLAGS, _TYPE, _SHA1) |
@@ -11543,18 +11608,54 @@ NV_STATUS nvGpuOpsRescheduleChannelGroup(NvProcessorUuid *uuid,
     if (!pKernelChannelGroup)
         return NV_ERR_INVALID_ARGUMENT;
 
-    pKernelChannelGroupApi = pKernelChannelGroup->pChanList->pHead->pKernelChannel->pKernelChannelGroupApi;
+    if (!RM_ENGINE_TYPE_IS_GR(pKernelChannelGroup->engineType))
+        return NV_ERR_INVALID_ARGUMENT;
+
+    if (listCount(&pKernelChannelGroup->apiObjList) == 0)
+        return NV_ERR_INVALID_OBJECT;
+
+    pKernelChannelGroupApi = *listHead(&pKernelChannelGroup->apiObjList);
     if (!pKernelChannelGroupApi)
         return NV_ERR_INVALID_OBJECT;
 
-    // TODO: Acquired because serverutilGetResourceRef expects RMAPI lock. Necessary?
-    status = rmapiLockAcquire(RMAPI_LOCK_FLAGS_READ, RM_LOCK_MODULES_GPU_OPS);
-    if (status != NV_OK)
-        return status;
-    status = serverutilGetResourceRef(RES_GET_CLIENT_HANDLE(pKernelChannelGroupApi), RES_GET_HANDLE(pKernelChannelGroupApi), &pResourceRef);
-    rmapiLockRelease();
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
     if (status != NV_OK)
         return status;
 
-    return NV_OK;
+    status = _nvGpuOpsLocksAcquireAll(RMAPI_LOCK_FLAGS_READ, RES_GET_CLIENT_HANDLE(pKernelChannelGroupApi), NULL, &acquiredLocks);
+    if (status != NV_OK)
+        goto tscleanup;
+
+    status = serverutilGetResourceRef(RES_GET_CLIENT_HANDLE(pKernelChannelGroupApi), RES_GET_HANDLE(pKernelChannelGroupApi), &pChanGrpApiRef);
+    if (status != NV_OK)
+        goto lockcleanup;
+
+    disableChannelsParams.bDisable = NV_FALSE;
+    disableChannelsParams.numChannels = 0;
+    disableChannelsParams.pRunlistPreemptEvent = NULL;
+
+    pChanList = pKernelChannelGroup->pChanList;
+    for (pChanNode = pChanList->pHead; pChanNode; pChanNode = pChanNode->pNext) {
+        status = serverutilGetResourceRef(RES_GET_CLIENT_HANDLE(pChanNode->pKernelChannel), RES_GET_HANDLE(pChanNode->pKernelChannel), &pChanRef);
+        if (status != NV_OK)
+            continue;
+
+        disableChannelsParams.hClientList[disableChannelsParams.numChannels] = RES_GET_CLIENT_HANDLE(pChanNode->pKernelChannel);
+        disableChannelsParams.hChannelList[disableChannelsParams.numChannels] = RES_GET_HANDLE(pChanNode->pKernelChannel);
+        disableChannelsParams.numChannels += 1;
+    }
+
+    NV_ASSERT_OK(
+        pRmApi->Control(pRmApi,
+                        vaSpace->device->session->handle,
+                        vaSpace->device->subhandle,
+                        NV2080_CTRL_CMD_FIFO_DISABLE_CHANNELS,
+                        &disableChannelsParams,
+                        sizeof(disableChannelsParams)));
+
+lockcleanup:
+    _nvGpuOpsLocksRelease(&acquiredLocks);
+tscleanup:
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return status;
 }
