@@ -178,46 +178,33 @@ static bool va_space_check_processors_masks(uvm_va_space_t *va_space)
 }
 
 // Return whether this is the first va_space belongs to this pid
-static bool uvm_init_gpu_cgroup(uvm_va_space_t *va_space) {
-    uvm_va_space_t *existing_va_space;
-    bool found = false;
+static uvm_va_space_t *uvm_find_va_space_by_pid(pid_t pid) {
+    uvm_va_space_t *va_space_out = NULL;
+    uvm_va_space_t *va_space;
 
     uvm_mutex_lock(&g_uvm_global.va_spaces.lock);
-    list_for_each_entry(existing_va_space, &g_uvm_global.va_spaces.list, list_node) {
-        if (existing_va_space->pid == va_space->pid) {
-            va_space->gpu_cgroup = existing_va_space->gpu_cgroup;
-            found = true;
+    list_for_each_entry(va_space, &g_uvm_global.va_spaces.list, list_node) {
+        if (va_space->pid == pid) {
+            va_space_out = va_space;
             break;
         }
     }
     uvm_mutex_unlock(&g_uvm_global.va_spaces.lock);
 
-    if (!found) {
+    return va_space_out;
+}
+
+// Return whether the va_space is the first one in the process
+static bool uvm_init_gpu_cgroup(uvm_va_space_t *va_space) {
+    uvm_va_space_t *existing_va_space = uvm_find_va_space_by_pid(va_space->pid);
+
+    if (existing_va_space) {
+        va_space->gpu_cgroup = existing_va_space->gpu_cgroup;
+    } else {
         va_space->gpu_cgroup = (uvm_gpu_cgroup_t *)uvm_kvmalloc_zero(sizeof(uvm_gpu_cgroup_t) * UVM_ID_MAX_GPUS);
     }
 
-    return !found;
-}
-
-// Return whether this is the last deiniting va_space belongs to this pid
-static bool uvm_deinit_gpu_cgroup(uvm_va_space_t *va_space) {
-    uvm_va_space_t *existing_va_space;
-    bool found = false;
-
-    uvm_mutex_lock(&g_uvm_global.va_spaces.lock);
-    list_for_each_entry(existing_va_space, &g_uvm_global.va_spaces.list, list_node) {
-        if (existing_va_space->pid == va_space->pid) {
-            found = true;
-            break;
-        }
-    }
-    uvm_mutex_unlock(&g_uvm_global.va_spaces.lock);
-
-    if (!found) {
-        uvm_kvfree(va_space->gpu_cgroup);
-    }
-
-    return !found;
+    return existing_va_space == NULL;
 }
 
 NV_STATUS uvm_va_space_create(struct address_space *mapping, uvm_va_space_t **va_space_ptr, NvU64 flags)
@@ -675,9 +662,13 @@ void uvm_va_space_destroy(uvm_va_space_t *va_space)
 
     uvm_mutex_unlock(&g_uvm_global.global_lock);
 
+    // Protected by fget to avoid UAF
     // Remove debugfs directory for this process
-    if (uvm_deinit_gpu_cgroup(va_space))
+    if (!uvm_find_va_space_by_pid(va_space->pid)) {
         gvm_debugfs_remove_process_dir(va_space->pid);
+        uvm_kvfree(va_space->gpu_cgroup);
+        va_space->gpu_cgroup = NULL;
+    }
 
     uvm_kvfree(va_space->mapping);
     uvm_kvfree(va_space);

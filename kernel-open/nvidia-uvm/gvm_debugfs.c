@@ -38,6 +38,7 @@ static struct task_struct *_gvm_find_task_by_pid(pid_t pid);
 static struct file *_gvm_fget_task(struct task_struct *task, unsigned int fd);
 static int _gvm_get_active_gpu_count(void);
 static uvm_va_space_t *_gvm_find_va_space_by_pid(pid_t pid);
+static uvm_gpu_cgroup_t *_gvm_find_gpu_cgroup_by_pid(pid_t pid);
 static size_t _gvm_find_va_spaces_by_pid(pid_t pid, uvm_va_space_t **va_spaces, size_t size);
 
 //
@@ -47,14 +48,18 @@ static size_t _gvm_find_va_spaces_by_pid(pid_t pid, uvm_va_space_t **va_spaces, 
 // Show memory limit for a specific process and GPU
 static int gvm_process_memory_limit_show(struct seq_file *m, void *data)
 {
-    struct gvm_gpu_debugfs *gpu_debugfs = m->private;
-    uvm_va_space_t *va_space = _gvm_find_va_space_by_pid(gpu_debugfs->pid);
+    struct gvm_gpu_debugfs *gpu_debugfs;
+    uvm_gpu_cgroup_t *gpu_cgroup;
 
-    if (!va_space)
+    gpu_debugfs = m->private;
+    if (!gpu_debugfs)
         return -ENOENT;
 
-    UVM_ASSERT(va_space->gpu_cgroup != NULL);
-    seq_printf(m, "%zu\n", va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].memory_limit);
+    gpu_cgroup = _gvm_find_gpu_cgroup_by_pid(gpu_debugfs->pid);
+    if (!gpu_cgroup)
+        return -ENOENT;
+
+    seq_printf(m, "%zu\n", gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].memory_limit);
 
     return 0;
 }
@@ -102,14 +107,18 @@ static ssize_t gvm_process_memory_limit_write(struct file *file, const char __us
 // Show memory priority for a specific process and GPU
 static int gvm_process_memory_priority_show(struct seq_file *m, void *data)
 {
-    struct gvm_gpu_debugfs *gpu_debugfs = m->private;
-    uvm_va_space_t *va_space = _gvm_find_va_space_by_pid(gpu_debugfs->pid);
+    struct gvm_gpu_debugfs *gpu_debugfs;
+    uvm_gpu_cgroup_t *gpu_cgroup;
 
-    if (!va_space)
+    gpu_debugfs = m->private;
+    if (!gpu_debugfs)
         return -ENOENT;
 
-    UVM_ASSERT(va_space->gpu_cgroup != NULL);
-    seq_printf(m, "%zu\n", va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].memory_priority);
+    gpu_cgroup = _gvm_find_gpu_cgroup_by_pid(gpu_debugfs->pid);
+    if (!gpu_cgroup)
+        return -ENOENT;
+
+    seq_printf(m, "%zu\n", gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].memory_priority);
 
     return 0;
 }
@@ -160,14 +169,18 @@ static ssize_t gvm_process_memory_priority_write(struct file *file, const char _
 // Show current memory usage for a specific process and GPU
 static int gvm_process_memory_current_show(struct seq_file *m, void *data)
 {
-    struct gvm_gpu_debugfs *gpu_debugfs = m->private;
-    uvm_va_space_t *va_space = _gvm_find_va_space_by_pid(gpu_debugfs->pid);
+    struct gvm_gpu_debugfs *gpu_debugfs;
+    uvm_gpu_cgroup_t *gpu_cgroup;
 
-    if (!va_space)
+    gpu_debugfs = m->private;
+    if (!gpu_debugfs)
         return -ENOENT;
 
-    UVM_ASSERT(va_space->gpu_cgroup != NULL);
-    seq_printf(m, "%zu\n", va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].memory_current);
+    gpu_cgroup = _gvm_find_gpu_cgroup_by_pid(gpu_debugfs->pid);
+    if (!gpu_cgroup)
+        return -ENOENT;
+
+    seq_printf(m, "%zu\n", gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].memory_current);
 
     return 0;
 }
@@ -175,14 +188,18 @@ static int gvm_process_memory_current_show(struct seq_file *m, void *data)
 // Show current swap memory usage for a specific process and GPU
 static int gvm_process_memory_swap_current_show(struct seq_file *m, void *data)
 {
-    struct gvm_gpu_debugfs *gpu_debugfs = m->private;
-    uvm_va_space_t *va_space = _gvm_find_va_space_by_pid(gpu_debugfs->pid);
+    struct gvm_gpu_debugfs *gpu_debugfs;
+    uvm_gpu_cgroup_t *gpu_cgroup;
 
-    if (!va_space)
+    gpu_debugfs = m->private;
+    if (!gpu_debugfs)
         return -ENOENT;
 
-    UVM_ASSERT(va_space->gpu_cgroup != NULL);
-    seq_printf(m, "%zu\n", va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].memory_swap_current);
+    gpu_cgroup = _gvm_find_gpu_cgroup_by_pid(gpu_debugfs->pid);
+    if (!gpu_cgroup)
+        return -ENOENT;
+
+    seq_printf(m, "%zu\n", gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].memory_swap_current);
 
     return 0;
 }
@@ -190,14 +207,18 @@ static int gvm_process_memory_swap_current_show(struct seq_file *m, void *data)
 // Show recommend memory usage for a specific process and GPU
 static int gvm_process_memory_recommend_show(struct seq_file *m, void *data)
 {
-    struct gvm_gpu_debugfs *gpu_debugfs = m->private;
-    uvm_va_space_t *va_space = _gvm_find_va_space_by_pid(gpu_debugfs->pid);
+    struct gvm_gpu_debugfs *gpu_debugfs;
+    uvm_gpu_cgroup_t *gpu_cgroup;
 
-    if (!va_space)
+    gpu_debugfs = m->private;
+    if (!gpu_debugfs)
         return -ENOENT;
 
-    UVM_ASSERT(va_space->gpu_cgroup != NULL);
-    seq_printf(m, "%zu\n", va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].memory_recommend);
+    gpu_cgroup = _gvm_find_gpu_cgroup_by_pid(gpu_debugfs->pid);
+    if (!gpu_cgroup)
+        return -ENOENT;
+
+    seq_printf(m, "%zu\n", gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].memory_recommend);
 
     return 0;
 }
@@ -243,14 +264,18 @@ static ssize_t gvm_process_memory_recommend_write(struct file *file, const char 
 // Show current compute timeslice for a specific process and GPU
 static int gvm_process_compute_priority_show(struct seq_file *m, void *data)
 {
-    struct gvm_gpu_debugfs *gpu_debugfs = m->private;
-    uvm_va_space_t *va_space = _gvm_find_va_space_by_pid(gpu_debugfs->pid);
+    struct gvm_gpu_debugfs *gpu_debugfs;
+    uvm_gpu_cgroup_t *gpu_cgroup;
 
-    if (!va_space)
+    gpu_debugfs = m->private;
+    if (!gpu_debugfs)
         return -ENOENT;
 
-    UVM_ASSERT(va_space->gpu_cgroup != NULL);
-    seq_printf(m, "%zu\n", va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].compute_priority);
+    gpu_cgroup = _gvm_find_gpu_cgroup_by_pid(gpu_debugfs->pid);
+    if (!gpu_cgroup)
+        return -ENOENT;
+
+    seq_printf(m, "%zu\n", gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].compute_priority);
 
     return 0;
 }
@@ -307,14 +332,18 @@ out:
 // Show current compute freeze status for a specific process and GPU
 static int gvm_process_compute_freeze_show(struct seq_file *m, void *data)
 {
-    struct gvm_gpu_debugfs *gpu_debugfs = m->private;
-    uvm_va_space_t *va_space = _gvm_find_va_space_by_pid(gpu_debugfs->pid);
+    struct gvm_gpu_debugfs *gpu_debugfs;
+    uvm_gpu_cgroup_t *gpu_cgroup;
 
-    if (!va_space)
+    gpu_debugfs = m->private;
+    if (!gpu_debugfs)
         return -ENOENT;
 
-    UVM_ASSERT(va_space->gpu_cgroup != NULL);
-    seq_printf(m, "%zu\n", va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].compute_freeze);
+    gpu_cgroup = _gvm_find_gpu_cgroup_by_pid(gpu_debugfs->pid);
+    if (!gpu_cgroup)
+        return -ENOENT;
+
+    seq_printf(m, "%zu\n", gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].compute_freeze);
 
     return 0;
 }
@@ -373,14 +402,18 @@ out:
 // Show current compute realtime status for a specific process and GPU
 static int gvm_process_compute_realtime_show(struct seq_file *m, void *data)
 {
-    struct gvm_gpu_debugfs *gpu_debugfs = m->private;
-    uvm_va_space_t *va_space = _gvm_find_va_space_by_pid(gpu_debugfs->pid);
+    struct gvm_gpu_debugfs *gpu_debugfs;
+    uvm_gpu_cgroup_t *gpu_cgroup;
 
-    if (!va_space)
+    gpu_debugfs = m->private;
+    if (!gpu_debugfs)
         return -ENOENT;
 
-    UVM_ASSERT(va_space->gpu_cgroup != NULL);
-    seq_printf(m, "%zu\n", va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].compute_realtime);
+    gpu_cgroup = _gvm_find_gpu_cgroup_by_pid(gpu_debugfs->pid);
+    if (!gpu_cgroup)
+        return -ENOENT;
+
+    seq_printf(m, "%zu\n", gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].compute_realtime);
 
     return 0;
 }
@@ -439,14 +472,18 @@ out:
 // Show current compute interleave_level status for a specific process and GPU
 static int gvm_process_compute_interleave_level_show(struct seq_file *m, void *data)
 {
-    struct gvm_gpu_debugfs *gpu_debugfs = m->private;
-    uvm_va_space_t *va_space = _gvm_find_va_space_by_pid(gpu_debugfs->pid);
+    struct gvm_gpu_debugfs *gpu_debugfs;
+    uvm_gpu_cgroup_t *gpu_cgroup;
 
-    if (!va_space)
+    gpu_debugfs = m->private;
+    if (!gpu_debugfs)
         return -ENOENT;
 
-    UVM_ASSERT(va_space->gpu_cgroup != NULL);
-    seq_printf(m, "%zu\n", va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].compute_interleave_level);
+    gpu_cgroup = _gvm_find_gpu_cgroup_by_pid(gpu_debugfs->pid);
+    if (!gpu_cgroup)
+        return -ENOENT;
+
+    seq_printf(m, "%zu\n", gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].compute_interleave_level);
 
     return 0;
 }
@@ -511,30 +548,39 @@ out:
 // Reschedule a specific process on a specific GPU
 static int gvm_process_compute_current_show(struct seq_file *m, void *data)
 {
-    struct gvm_gpu_debugfs *gpu_debugfs = m->private;
-    uvm_va_space_t *va_space = _gvm_find_va_space_by_pid(gpu_debugfs->pid);
+    struct gvm_gpu_debugfs *gpu_debugfs;
+    uvm_gpu_cgroup_t *gpu_cgroup;
 
-    if (!va_space)
+    gpu_debugfs = m->private;
+    if (!gpu_debugfs)
         return -ENOENT;
 
-    UVM_ASSERT(va_space->gpu_cgroup != NULL);
-    seq_printf(m, "%zu\n", va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].compute_current);
+    gpu_cgroup = _gvm_find_gpu_cgroup_by_pid(gpu_debugfs->pid);
+    if (!gpu_cgroup)
+        return -ENOENT;
+
+    seq_printf(m, "%zu\n", gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].compute_current);
 
     return 0;
 }
 
 static int gvm_process_gcgroup_stat_show(struct seq_file *m, void *data)
 {
-    struct gvm_gpu_debugfs *gpu_debugfs = m->private;
-    uvm_va_space_t *va_space = _gvm_find_va_space_by_pid(gpu_debugfs->pid);
+    struct gvm_gpu_debugfs *gpu_debugfs;
+    uvm_gpu_cgroup_t *gpu_cgroup;
+    size_t nr_submitted_kernels;
+    size_t nr_ended_kernels;
 
-    if (!va_space)
+    gpu_debugfs = m->private;
+    if (!gpu_debugfs)
         return -ENOENT;
 
-    UVM_ASSERT(va_space->gpu_cgroup != NULL);
+    gpu_cgroup = _gvm_find_gpu_cgroup_by_pid(gpu_debugfs->pid);
+    if (!gpu_cgroup)
+        return -ENOENT;
 
-    size_t nr_submitted_kernels = (size_t)atomic64_read(&(va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].nr_submitted_kernels));
-    size_t nr_ended_kernels = (size_t)atomic64_read(&(va_space->gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].nr_ended_kernels));
+    nr_submitted_kernels = (size_t)atomic64_read(&(gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].nr_submitted_kernels));
+    nr_ended_kernels = (size_t)atomic64_read(&(gpu_cgroup[uvm_id_gpu_index(gpu_debugfs->gpu_id)].nr_ended_kernels));
     seq_printf(m, "nr_submitted_kernels: %zu\nnr_ended_kernels: %zu\nnr_pending_kernels: %zu\n",
             nr_submitted_kernels, nr_ended_kernels,
             (nr_submitted_kernels > nr_ended_kernels) ? nr_submitted_kernels - nr_ended_kernels : 0);
@@ -1182,16 +1228,36 @@ static int _gvm_get_active_gpu_count(void)
 
 static uvm_va_space_t *_gvm_find_va_space_by_pid(pid_t pid)
 {
-    uvm_va_space_t *va_space = NULL;
+    uvm_va_space_t *va_space_out = NULL;
+    uvm_va_space_t *va_space;
 
     uvm_mutex_lock(&g_uvm_global.va_spaces.lock);
     list_for_each_entry(va_space, &g_uvm_global.va_spaces.list, list_node) {
-        if (va_space->pid == pid)
+        if (va_space->pid == pid) {
+            va_space_out = va_space;
             break;
+        }
     }
     uvm_mutex_unlock(&g_uvm_global.va_spaces.lock);
 
-    return va_space;
+    return va_space_out;
+}
+
+static uvm_gpu_cgroup_t *_gvm_find_gpu_cgroup_by_pid(pid_t pid)
+{
+    uvm_gpu_cgroup_t *gpu_cgroup = NULL;
+    uvm_va_space_t *va_space;
+
+    uvm_mutex_lock(&g_uvm_global.va_spaces.lock);
+    list_for_each_entry(va_space, &g_uvm_global.va_spaces.list, list_node) {
+        if (va_space->pid == pid) {
+            gpu_cgroup = va_space->gpu_cgroup;
+            break;
+        }
+    }
+    uvm_mutex_unlock(&g_uvm_global.va_spaces.lock);
+
+    return gpu_cgroup;
 }
 
 static size_t _gvm_find_va_spaces_by_pid(pid_t pid, uvm_va_space_t **va_spaces, size_t size)
