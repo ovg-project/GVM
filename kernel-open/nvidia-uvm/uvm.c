@@ -54,31 +54,6 @@ static dev_t g_uvm_base_dev;
 static struct cdev g_uvm_cdev;
 static const struct file_operations uvm_fops;
 
-static NV_STATUS uvm_api_ctrl_cmd_operate_gr_channel_group(UVM_CTRL_CMD_OPERATE_CHANNEL_GROUP_PARAMS *params, struct file *filp);
-static NV_STATUS uvm_api_ctrl_cmd_operate_gr_channel(UVM_CTRL_CMD_OPERATE_CHANNEL_PARAMS *params, struct file *filp);
-
-struct file *fget_task_local(struct task_struct *task, unsigned int fd) {
-    struct files_struct *files;
-    struct fdtable *fdt;
-    struct file *file = NULL;
-
-    rcu_read_lock();
-
-    files = rcu_dereference_raw(task->files);
-    if (!files)
-        goto out;
-
-    fdt = rcu_dereference_raw(files->fdt);
-    if (!fdt || fd >= fdt->max_fds)
-        goto out;
-
-    file = get_file_rcu(&fdt->fd[fd]);
-
-out:
-    rcu_read_unlock();
-    return file;
-}
-
 bool uvm_file_is_nvidia_uvm(struct file *filp)
 {
     return (filp != NULL) && (filp->f_op == &uvm_fops);
@@ -1062,114 +1037,23 @@ static NV_STATUS uvm_api_is_initialized(UVM_IS_INITIALIZED_PARAMS *params, struc
     return NV_OK;
 }
 
-int uvm_linux_api_get_task_uvmfd(struct task_struct *task, int *uvmfds, size_t size) {
-    int fd;
-    int maxfd;
-    struct file *filep;
-    struct files_struct *filesp = task->files;
-    int task_num_uvmfds = 0;
+static NV_STATUS uvm_api_update_event_count(UVM_UPDATE_EVENT_COUNT_PARAMS *params, struct file *filp)
+{
+    uvm_va_space_t *va_space = uvm_va_space_get(filp);
+    uvm_gpu_t *gpu;
 
-    if (!filesp)
-        return -ENODATA;
-    maxfd = filesp->fdt->max_fds;
-
-    for (fd = 0; fd < maxfd && task_num_uvmfds < size; ++fd) {
-        filep = fget_task_local(task, fd);
-        if (!filep)
-            continue;
-        if (uvm_fd_va_space(filep) != NULL) {
-            uvmfds[task_num_uvmfds] = fd;
-            task_num_uvmfds += 1;
-        }
-        fput(filep);
+    if (!va_space) {
+        printk(KERN_ERR "Failed to find va_space\n");
+        return NV_ERR_INVALID_ARGUMENT;
     }
 
-    return task_num_uvmfds;
+    gpu = uvm_va_space_get_gpu_by_uuid(va_space, &params->uuid);
+    if (!gpu) {
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+
+    return gvm_update_event_count(params, va_space, gpu->id);
 }
-EXPORT_SYMBOL_GPL(uvm_linux_api_get_task_uvmfd);
-
-int uvm_linux_api_preempt_task(struct task_struct *task, int fd) {
-    struct file *filep = fget_task_local(task, fd);
-    UVM_CTRL_CMD_OPERATE_CHANNEL_PARAMS params = {
-        .cmd = NVA06F_CTRL_CMD_STOP_CHANNEL,
-        .data = {
-            .NVA06F_CTRL_STOP_CHANNEL_PARAMS = {
-                .bImmediate = true
-            }
-        },
-        .dataSize = sizeof(NVA06F_CTRL_STOP_CHANNEL_PARAMS),
-        .rmStatus = 0
-    };
-    int error = 0;
-
-    if (!filep)
-        return 0;
-
-    if (uvm_fd_va_space(filep) == NULL) {
-        error = -ENOENT;
-        goto out;
-    }
-
-    if (uvm_api_ctrl_cmd_operate_gr_channel(&params, filep) != NV_OK) {
-        error = -EINVAL;
-        goto out;
-    }
-
-out:
-    fput(filep);
-    return error;
-}
-EXPORT_SYMBOL_GPL(uvm_linux_api_preempt_task);
-
-int uvm_linux_api_reschedule_task(struct task_struct *task, int fd) {
-    struct file *filep = fget_task_local(task, fd);
-    UVM_CTRL_CMD_OPERATE_CHANNEL_PARAMS bind_params = {
-        .cmd = NVA06F_CTRL_CMD_BIND,
-        .data = {
-            .NVA06F_CTRL_BIND_PARAMS = {
-                // Will be filled in kernel module using restored type of engine
-                .engineType = 0
-            }
-        },
-        .dataSize = sizeof(NVA06F_CTRL_BIND_PARAMS),
-        .rmStatus = 0
-    };
-    UVM_CTRL_CMD_OPERATE_CHANNEL_PARAMS schedule_params = {
-        .cmd = NVA06F_CTRL_CMD_GPFIFO_SCHEDULE,
-        .data = {
-            .NVA06F_CTRL_GPFIFO_SCHEDULE_PARAMS = {
-                .bEnable = true,
-                .bSkipSubmit = false,
-                .bSkipEnable = false
-            }
-        },
-        .dataSize = sizeof(NVA06F_CTRL_GPFIFO_SCHEDULE_PARAMS),
-        .rmStatus = 0
-    };
-    int error = 0;
-
-    if (!filep)
-        return 0;
-
-    if (uvm_fd_va_space(filep) == NULL) {
-        error = -ENOENT;
-        goto out;
-    }
-
-    if (uvm_api_ctrl_cmd_operate_gr_channel(&bind_params, filep) != NV_OK) {
-        error = -EINVAL;
-        goto out;
-    }
-    if (uvm_api_ctrl_cmd_operate_gr_channel(&schedule_params, filep) != NV_OK) {
-        error = -EINVAL;
-        goto out;
-    }
-
-out:
-    fput(filep);
-    return error;
-}
-EXPORT_SYMBOL_GPL(uvm_linux_api_reschedule_task);
 
 static NV_STATUS uvm_debugfs_api_ctrl_cmd_operate_gr_channel_group(UVM_CTRL_CMD_OPERATE_CHANNEL_GROUP_PARAMS *params, uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id) {
     uvm_gpu_va_space_t *gpu_va_space;
@@ -1200,6 +1084,7 @@ static NV_STATUS uvm_debugfs_api_ctrl_cmd_operate_gr_channel_group(UVM_CTRL_CMD_
     return NV_OK;
 }
 
+__attribute__((unused))
 static NV_STATUS uvm_debugfs_api_ctrl_cmd_operate_gr_channel(UVM_CTRL_CMD_OPERATE_CHANNEL_PARAMS *params, uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id) {
     uvm_gpu_va_space_t *gpu_va_space;
     uvm_user_channel_t *user_channel;
@@ -1280,128 +1165,6 @@ int uvm_debugfs_api_set_timeslice(uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id,
     return error;
 }
 
-int uvm_debugfs_api_make_realtime(uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id, NvBool realtime) {
-    UVM_CTRL_CMD_OPERATE_CHANNEL_GROUP_PARAMS params = {
-        .cmd = NVA06C_CTRL_CMD_MAKE_REALTIME,
-        .data = {
-            .NVA06C_CTRL_MAKE_REALTIME_PARAMS = {
-                .bRealtime = realtime
-            }
-        },
-        .dataSize = sizeof(NVA06C_CTRL_MAKE_REALTIME_PARAMS),
-        .rmStatus = 0
-    };
-    int error = 0;
-
-    if (uvm_debugfs_api_ctrl_cmd_operate_gr_channel_group(&params, va_space, gpu_id) != NV_OK)
-        error = -EINVAL;
-
-    return error;
-}
-
-int uvm_debugfs_api_set_interleave_level(uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id, size_t interleave_level) {
-    UVM_CTRL_CMD_OPERATE_CHANNEL_GROUP_PARAMS params = {
-        .cmd = NVA06C_CTRL_CMD_SET_INTERLEAVE_LEVEL,
-        .data = {
-            .NVA06C_CTRL_INTERLEAVE_LEVEL_PARAMS = {
-                .tsgInterleaveLevel = interleave_level
-            }
-        },
-        .dataSize = sizeof(NVA06C_CTRL_INTERLEAVE_LEVEL_PARAMS),
-        .rmStatus = 0
-    };
-    int error = 0;
-
-    if (uvm_debugfs_api_ctrl_cmd_operate_gr_channel_group(&params, va_space, gpu_id) != NV_OK)
-        error = -EINVAL;
-
-    return error;
-}
-
-static NV_STATUS uvm_api_ctrl_cmd_operate_gr_channel_group(UVM_CTRL_CMD_OPERATE_CHANNEL_GROUP_PARAMS *params, struct file *filp)
-{
-    uvm_va_space_t *va_space = uvm_va_space_get(filp);
-    uvm_gpu_va_space_t *gpu_va_space;
-    uvm_user_channel_group_t *user_channel_group;
-    NV_STATUS status;
-
-    for_each_gpu_va_space(gpu_va_space, va_space) {
-        list_for_each_entry(user_channel_group, &gpu_va_space->registered_channel_groups, channel_group_node) {
-            if (user_channel_group->engine_type != UVM_GPU_CHANNEL_ENGINE_TYPE_GR) {
-                continue;
-            }
-
-            status = nvUvmInterfaceCtrlCmdOperateChannelGroup(&user_channel_group->parent->uuid,
-                                                     user_channel_group->group_id,
-                                                     user_channel_group->runlist_id,
-                                                     params->cmd,
-                                                     &params->data,
-                                                     params->dataSize);
-            if (status != NV_OK) {
-                return status;
-            }
-        }
-    }
-
-    return NV_OK;
-}
-
-static NV_STATUS uvm_api_ctrl_cmd_operate_gr_channel(UVM_CTRL_CMD_OPERATE_CHANNEL_PARAMS *params, struct file *filp)
-{
-    uvm_va_space_t *va_space = uvm_va_space_get(filp);
-    uvm_gpu_va_space_t *gpu_va_space;
-    uvm_user_channel_t *user_channel;
-    NV_STATUS status;
-
-    for_each_gpu_va_space(gpu_va_space, va_space) {
-        list_for_each_entry(user_channel, &gpu_va_space->registered_channels, list_node) {
-            if (user_channel->engine_type != UVM_GPU_CHANNEL_ENGINE_TYPE_GR) {
-                continue;
-            }
-
-            status = nvUvmInterfaceCtrlCmdOperateChannel(user_channel->rm_retained_channel,
-                                                     params->cmd,
-                                                     &params->data,
-                                                     params->dataSize);
-            if (status != NV_OK) {
-                return status;
-            }
-        }
-    }
-
-    return NV_OK;
-}
-
-// Deprecated, take no effect
-static NV_STATUS uvm_api_set_gmemcg(UVM_SET_GMEMCG_PARAMS *params, struct file *filp)
-{
-    uvm_va_space_t *va_space = uvm_va_space_get(filp);
-
-    if (!va_space) {
-        return NV_ERR_INVALID_ARGUMENT;
-    }
-
-    return NV_OK;
-}
-
-static NV_STATUS uvm_api_update_event_count(UVM_UPDATE_EVENT_COUNT_PARAMS *params, struct file *filp)
-{
-    uvm_va_space_t *va_space = uvm_va_space_get(filp);
-    uvm_gpu_t *gpu;
-
-    if (!va_space) {
-        printk(KERN_ERR "Failed to find va_space\n");
-        return NV_ERR_INVALID_ARGUMENT;
-    }
-
-    gpu = uvm_va_space_get_gpu_by_uuid(va_space, &params->uuid);
-    if (!gpu) {
-        return NV_ERR_INVALID_ARGUMENT;
-    }
-
-    return gvm_update_event_count(params, va_space, gpu->id);
-}
-
 static long uvm_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
     switch (cmd)
@@ -1455,9 +1218,6 @@ static long uvm_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_ALLOC_DEVICE_P2P,               uvm_api_alloc_device_p2p);
         UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_CLEAR_ALL_ACCESS_COUNTERS,      uvm_api_clear_all_access_counters);
         UVM_ROUTE_CMD_STACK_NO_INIT_CHECK(UVM_IS_INITIALIZED,              uvm_api_is_initialized);
-        UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_CTRL_CMD_OPERATE_CHANNEL_GROUP,  uvm_api_ctrl_cmd_operate_gr_channel_group);
-        UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_CTRL_CMD_OPERATE_CHANNEL,        uvm_api_ctrl_cmd_operate_gr_channel);
-        UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_SET_GMEMCG,                      uvm_api_set_gmemcg);
         UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_UPDATE_EVENT_COUNT,              uvm_api_update_event_count);
     }
 

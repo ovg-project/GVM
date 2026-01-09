@@ -1283,10 +1283,6 @@ void NV_API_CALL os_dump_stack(void)
     dump_stack();
 }
 
-void NV_API_CALL os_sprint_symbol(char *buf, unsigned long addr) {
-    sprint_symbol(buf, addr);
-}
-
 typedef struct os_spinlock_s
 {
     nv_spinlock_t      lock;

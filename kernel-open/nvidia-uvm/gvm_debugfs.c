@@ -22,8 +22,6 @@ static DEFINE_HASHTABLE(gvm_debugfs_dirs, GVM_DEBUGFS_HASH_BITS);
 static DEFINE_SPINLOCK(gvm_debugfs_lock);
 
 #define GVM_MAX_VA_SPACES 8
-#define GVM_MAX_PROCESSES 64
-#define GVM_SIGNAL_INTERVAL_SEC 10
 
 // Timeslice is calculated by GVM_MAX_TIMESLICE_US >> priority
 // In default, priority is 2, whose timeslice is 2048 us
@@ -34,9 +32,6 @@ static DEFINE_SPINLOCK(gvm_debugfs_lock);
 // Forward declarations of util functions
 //
 
-static struct task_struct *_gvm_find_task_by_pid(pid_t pid);
-static struct file *_gvm_fget_task(struct task_struct *task, unsigned int fd);
-static int _gvm_get_active_gpu_count(void);
 static uvm_va_space_t *_gvm_find_va_space_by_pid(pid_t pid);
 static uvm_gpu_cgroup_t *_gvm_find_gpu_cgroup_by_pid(pid_t pid);
 static size_t _gvm_find_and_acquire_va_spaces_by_pid(pid_t pid, uvm_va_space_t **va_spaces, size_t size);
@@ -706,135 +701,6 @@ void gvm_debugfs_exit(void)
 //
 // Util functions
 //
-
-// Find the task by PID
-static struct task_struct *_gvm_find_task_by_pid(pid_t pid)
-{
-    struct task_struct *task = NULL;
-    struct pid *pid_struct;
-
-    rcu_read_lock();
-    pid_struct = find_pid_ns(pid, &init_pid_ns);
-    if (pid_struct) {
-        task = pid_task(pid_struct, PIDTYPE_PID);
-        if (task)
-            get_task_struct(task);
-    }
-    rcu_read_unlock();
-
-    return task;
-}
-
-// Copied from https://elixir.bootlin.com/linux/v6.16/source/fs/file.c#L974
-static inline struct file *__gvm_fget_files_rcu(struct files_struct *files, unsigned int fd,
-                                                fmode_t mask)
-{
-    for (;;) {
-        struct file *file;
-        struct fdtable *fdt = rcu_dereference_raw(files->fdt);
-        struct file __rcu **fdentry;
-        unsigned long nospec_mask;
-
-        /* Mask is a 0 for invalid fd's, ~0 for valid ones */
-        nospec_mask = array_index_mask_nospec(fd, fdt->max_fds);
-
-        /*
-         * fdentry points to the 'fd' offset, or fdt->fd[0].
-         * Loading from fdt->fd[0] is always safe, because the
-         * array always exists.
-         */
-        fdentry = fdt->fd + (fd & nospec_mask);
-
-        /* Do the load, then mask any invalid result */
-        file = rcu_dereference_raw(*fdentry);
-        file = (void *) (nospec_mask & (unsigned long) file);
-        if (unlikely(!file))
-            return NULL;
-
-        /*
-         * Ok, we have a file pointer that was valid at
-         * some point, but it might have become stale since.
-         *
-         * We need to confirm it by incrementing the refcount
-         * and then check the lookup again.
-         *
-         * file_ref_get() gives us a full memory barrier. We
-         * only really need an 'acquire' one to protect the
-         * loads below, but we don't have that.
-         */
-        /* NOTE (yifan): we use get_file_rcu() for kernel generality and
-         * to avoid the use of file_ref_get() and internal fields of struct file.
-         */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)  // 6.12.0
-        if (unlikely(!file_ref_get(&file->f_ref)))
-            continue;
-#else  // LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
-        if (unlikely(!get_file_rcu(&file)))
-            continue;
-#endif
-
-        /*
-         * Such a race can take two forms:
-         *
-         *  (a) the file ref already went down to zero and the
-         *      file hasn't been reused yet or the file count
-         *      isn't zero but the file has already been reused.
-         *
-         *  (b) the file table entry has changed under us.
-         *       Note that we don't need to re-check the 'fdt->fd'
-         *       pointer having changed, because it always goes
-         *       hand-in-hand with 'fdt'.
-         *
-         * If so, we need to put our ref and try again.
-         */
-        if (unlikely(file != rcu_dereference_raw(*fdentry)) ||
-            unlikely(rcu_dereference_raw(files->fdt) != fdt)) {
-            fput(file);
-            continue;
-        }
-
-        /*
-         * This isn't the file we're looking for or we're not
-         * allowed to get a reference to it.
-         */
-        if (unlikely(file->f_mode & mask)) {
-            fput(file);
-            return NULL;
-        }
-
-        /*
-         * Ok, we have a ref to the file, and checked that it
-         * still exists.
-         */
-        return file;
-    }
-}
-
-// Mimicking fget_task(). The caller MUST fput() the returned file.
-static struct file *_gvm_fget_task(struct task_struct *task, unsigned int fd)
-{
-    struct file *file = NULL;
-
-    task_lock(task);
-    if (task->files) {
-        rcu_read_lock();
-        file = __gvm_fget_files_rcu(task->files, fd, 0);
-        rcu_read_unlock();
-    }
-    task_unlock(task);
-
-    return file;
-}
-
-// Get count of active GPUs known to UVM
-static int _gvm_get_active_gpu_count(void)
-{
-    int count = 0;
-    uvm_mutex_lock(&g_uvm_global.global_lock);
-    count = uvm_processor_mask_get_gpu_count(&g_uvm_global.retained_gpus);
-    uvm_mutex_unlock(&g_uvm_global.global_lock);
-    return count;
-}
 
 static uvm_va_space_t *_gvm_find_va_space_by_pid(pid_t pid)
 {

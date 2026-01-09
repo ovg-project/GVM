@@ -49,17 +49,6 @@ void gvm_debugfs_remove_process_dir(pid_t pid);
 int gvm_debugfs_create_gpu_dir(pid_t pid, uvm_gpu_id_t gpu_id);
 int gvm_debugfs_remove_gpu_dir(pid_t pid, uvm_gpu_id_t gpu_id);
 
-// Process tracking functions (needed by debugfs)
-struct gpu_process_entry *gvm_find_gpu_process(pid_t pid, bool create);
-void gvm_update_gpu_memory_current(pid_t pid, size_t new_current);
-void gvm_set_gpu_memory_limit(pid_t pid, size_t limit);
-
-// Exported functions for cross-process control
-int gvm_linux_api_get_task_uvmfd(struct task_struct *task, int *uvmfds, size_t size);
-int gvm_linux_api_preempt_task(struct task_struct *task, int fd);
-int gvm_linux_api_reschedule_task(struct task_struct *task, int fd);
-size_t gvm_linux_api_get_gpu_rss(struct task_struct *task, int fd);
-
 int try_charge_gpu_memcg_debugfs(uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id, size_t size, bool swap);
 int try_uncharge_gpu_memcg_debugfs(uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id, size_t size, bool swap);
 

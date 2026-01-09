@@ -1264,7 +1264,6 @@ static NV_STATUS evict_root_chunk_from_va_block(uvm_pmm_gpu_t *pmm,
     uvm_gpu_t *gpu = uvm_pmm_to_gpu(pmm);
     NV_STATUS status;
     uvm_tracker_t tracker = UVM_TRACKER_INIT();
-    size_t evicted_bytes;
 
     UVM_ASSERT(va_block);
 
@@ -1274,7 +1273,7 @@ static NV_STATUS evict_root_chunk_from_va_block(uvm_pmm_gpu_t *pmm,
 
     uvm_mutex_lock(&va_block->lock);
 
-    status = uvm_va_block_evict_chunks(va_block, gpu, &root_chunk->chunk, &tracker, &evicted_bytes);
+    status = uvm_va_block_evict_chunks(va_block, gpu, &root_chunk->chunk, &tracker);
 
     uvm_mutex_unlock(&va_block->lock);
 

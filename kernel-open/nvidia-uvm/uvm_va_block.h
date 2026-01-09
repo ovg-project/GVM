@@ -674,13 +674,7 @@ static inline uvm_va_block_gpu_state_t *uvm_va_block_gpu_state_get(uvm_va_block_
     return va_block->gpus[uvm_id_gpu_index(gpu_id)];
 }
 
-size_t uvm_debugfs_api_get_gpu_rss(uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id);
-
 int uvm_debugfs_api_charge_gpu_memory_limit(uvm_va_space_t *va_space, uvm_gpu_id_t gpu_id, size_t current_value, size_t limit_value);
-
-int uvm_linux_api_charge_gpu_memory_high(struct task_struct *task, int fd, u64 current_value, u64 high_value);
-
-size_t uvm_linux_api_get_gpu_rss(struct task_struct *task, int fd);
 
 int uvm_try_charge_gpu_memory_cgroup(uvm_va_block_t *block, uvm_gpu_id_t gpu_id, size_t size, bool uncharge, bool swap);
 
@@ -1571,8 +1565,7 @@ void uvm_va_block_retry_deinit(uvm_va_block_retry_t *uvm_va_block_retry, uvm_va_
 NV_STATUS uvm_va_block_evict_chunks(uvm_va_block_t *va_block,
                                     uvm_gpu_t *gpu,
                                     uvm_gpu_chunk_t *root_chunk,
-                                    uvm_tracker_t *tracker,
-                                    size_t *evicted_bytes);
+                                    uvm_tracker_t *tracker);
 
 NV_STATUS uvm_test_va_block_inject_error(UVM_TEST_VA_BLOCK_INJECT_ERROR_PARAMS *params, struct file *filp);
 NV_STATUS uvm_test_change_pte_mapping(UVM_TEST_CHANGE_PTE_MAPPING_PARAMS *params, struct file *filp);

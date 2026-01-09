@@ -1129,106 +1129,31 @@ typedef struct
     NV_STATUS       rmStatus;    // OUT
 } UVM_IS_INITIALIZED_PARAMS;
 
-#define UVM_CTRL_CMD_OPERATE_CHANNEL_GROUP                             UVM_IOCTL_BASE(81)
-
-typedef struct NVA06C_CTRL_BIND_PARAMS {
-    NvU32 engineType;
-} NVA06C_CTRL_BIND_PARAMS;
-#define NVA06C_CTRL_CMD_BIND (0xa06c0102)
-
 typedef struct {
     NvU64       timesliceUs;
 } NVA06C_CTRL_TIMESLICE_PARAMS;
 #define NVA06C_CTRL_CMD_SET_TIMESLICE (0xa06c0103)
 #define NVA06C_CTRL_CMD_GET_TIMESLICE (0xa06c0104)
 
-typedef struct {
-    NvBool bWait;
-    NvBool bManualTimeout;
-    NvU32  timeoutUs;
-} NVA06C_CTRL_PREEMPT_PARAMS;
-#define NVA06C_CTRL_CMD_PREEMPT (0xa06c0105)
-
-typedef struct {
-    NvBool bRealtime;
-} NVA06C_CTRL_MAKE_REALTIME_PARAMS;
-#define NVA06C_CTRL_CMD_MAKE_REALTIME (0xa06c0110)
-
-#define NVA06C_CTRL_INTERLEAVE_LEVEL_LOW    (0x00000000)
-#define NVA06C_CTRL_INTERLEAVE_LEVEL_MEDIUM (0x00000001)
-#define NVA06C_CTRL_INTERLEAVE_LEVEL_HIGH   (0x00000002)
-
-typedef struct {
-    NvU32 tsgInterleaveLevel;     // IN
-} NVA06C_CTRL_INTERLEAVE_LEVEL_PARAMS;
-#define NVA06C_CTRL_CMD_SET_INTERLEAVE_LEVEL (0xa06c0107)
-
-typedef struct {
-    NvBool bEnable;               // IN
-    NvBool bSkipSubmit;           // IN
-    NvBool bSkipEnable;           // IN
-} NVA06C_CTRL_GPFIFO_SCHEDULE_PARAMS;
-#define NVA06C_CTRL_CMD_GPFIFO_SCHEDULE (0xa06c0101)
-#define NVA06C_CTRL_CMD_INTERNAL_GPFIFO_SCHEDULE (0xa06c0201)
-
 typedef struct
 {
     NvU32           cmd;                  // IN
     union {
-        NVA06C_CTRL_BIND_PARAMS NVA06C_CTRL_BIND_PARAMS;
         NVA06C_CTRL_TIMESLICE_PARAMS NVA06C_CTRL_TIMESLICE_PARAMS;
-        NVA06C_CTRL_PREEMPT_PARAMS NVA06C_CTRL_PREEMPT_PARAMS;
-        NVA06C_CTRL_MAKE_REALTIME_PARAMS NVA06C_CTRL_MAKE_REALTIME_PARAMS;
-        NVA06C_CTRL_INTERLEAVE_LEVEL_PARAMS NVA06C_CTRL_INTERLEAVE_LEVEL_PARAMS;
-        NVA06C_CTRL_GPFIFO_SCHEDULE_PARAMS NVA06C_CTRL_GPFIFO_SCHEDULE_PARAMS;
     } data;
     NvU32           dataSize;             // IN
     NV_STATUS       rmStatus;             // OUT
 } UVM_CTRL_CMD_OPERATE_CHANNEL_GROUP_PARAMS;
 
-#define UVM_CTRL_CMD_OPERATE_CHANNEL                                   UVM_IOCTL_BASE(82)
-typedef struct {
-    NvBool bEnable;               // IN
-    NvBool bSkipSubmit;           // IN
-    NvBool bSkipEnable;           // IN
-} NVA06F_CTRL_GPFIFO_SCHEDULE_PARAMS;
-#define NVA06F_CTRL_CMD_GPFIFO_SCHEDULE (0xa06f0103)
-
-typedef struct {
-    NvBool bForceRestart;
-    NvBool bBypassWait;
-} NVA06F_CTRL_RESTART_RUNLIST_PARAMS;
-#define NVA06F_CTRL_CMD_RESTART_RUNLIST (0xa06f0111)
-
-typedef struct {
-    NvBool bImmediate;
-} NVA06F_CTRL_STOP_CHANNEL_PARAMS;
-#define NVA06F_CTRL_CMD_STOP_CHANNEL (0xa06f0112)
-
-typedef struct NVA06F_CTRL_BIND_PARAMS {
-    NvU32 engineType;
-} NVA06F_CTRL_BIND_PARAMS;
-#define NVA06F_CTRL_CMD_BIND (0xa06f0104)
-
 typedef struct
 {
     NvU32               cmd;                    // IN
     union {
-        NVA06F_CTRL_GPFIFO_SCHEDULE_PARAMS NVA06F_CTRL_GPFIFO_SCHEDULE_PARAMS;
-        NVA06F_CTRL_RESTART_RUNLIST_PARAMS NVA06F_CTRL_RESTART_RUNLIST_PARAMS;
-        NVA06F_CTRL_STOP_CHANNEL_PARAMS NVA06F_CTRL_STOP_CHANNEL_PARAMS;
-        NVA06F_CTRL_BIND_PARAMS NVA06F_CTRL_BIND_PARAMS;
+		NvU32           __unused;
     } data;
     NvU32               dataSize;               // IN
     NV_STATUS           rmStatus;               // OUT
 } UVM_CTRL_CMD_OPERATE_CHANNEL_PARAMS;
-
-#define UVM_SET_GMEMCG                                                UVM_IOCTL_BASE(83)
-typedef struct
-{
-    NvU64               size;     // IN
-    NV_STATUS           rmStatus; // OUT
-} UVM_SET_GMEMCG_PARAMS;
 
 typedef enum
 {
@@ -1245,7 +1170,7 @@ typedef enum {
     UVM_UPDATE_EVENT_COUNT_TYPE_COUNT
 } UVM_UPDATE_EVENT_COUNT_TYPE;
 
-#define UVM_UPDATE_EVENT_COUNT                                        UVM_IOCTL_BASE(84)
+#define UVM_UPDATE_EVENT_COUNT                                        UVM_IOCTL_BASE(81)
 typedef struct
 {
     NvProcessorUuid uuid;

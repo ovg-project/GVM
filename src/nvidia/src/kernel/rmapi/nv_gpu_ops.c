@@ -11456,25 +11456,6 @@ NV_STATUS nvGpuOpsCtrlCmdOperateChannel(gpuRetainedChannel *retainedChannel,
     return NV_OK;
 }
 
-static NV_STATUS getChannelHwState(RM_API *pRmApi, KernelChannel *pKernelChannel, NvU32 *state) {
-    NVB06F_CTRL_CHANNEL_HW_STATE_PARAMS params = { 0 };
-
-    if (!state)
-        return NV_ERR_INVALID_ARGUMENT;
-
-    NV_ASSERT_OK(
-        pRmApi->Control(pRmApi,
-                        RES_GET_CLIENT_HANDLE(pKernelChannel),
-                        RES_GET_HANDLE(pKernelChannel),
-                        NVB06F_CTRL_CMD_GET_CHANNEL_HW_STATE,
-                        &params,
-                        sizeof(NVB06F_CTRL_CHANNEL_HW_STATE_PARAMS)));
-
-    *state = params.state;
-
-    return NV_OK;
-}
-
 NV_STATUS nvGpuOpsPreemptChannelGroup(struct gpuAddressSpace *vaSpace,
                                       NvProcessorUuid *uuid,
                                       NvU32 tsgId,

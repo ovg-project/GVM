@@ -57,8 +57,6 @@ enum {
 // NULL.
 void uvm_uuid_string(char *buffer, const NvProcessorUuid *uuid);
 
-struct file *fget_task_local(struct task_struct *task, unsigned int fd);
-
 // Long prefix - typically for debugging and tests.
 #define UVM_PRINT_FUNC_PREFIX(func, prefix, fmt, ...) \
     func(prefix "%s:%u %s[pid:%d]" fmt,               \
@@ -346,12 +344,6 @@ typedef struct
                                           \
     __ret;                                \
 })
-
-int uvm_linux_api_get_task_uvmfd(struct task_struct *task, int *uvmfds, size_t size);
-
-int uvm_linux_api_preempt_task(struct task_struct *task, int fd);
-
-int uvm_linux_api_reschedule_task(struct task_struct *task, int fd);
 
 // Returns whether the input file was opened against the UVM character device
 // file. A NULL input returns false.

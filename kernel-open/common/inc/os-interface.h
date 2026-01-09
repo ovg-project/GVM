@@ -207,7 +207,6 @@ int         NV_API_CALL  os_nv_cap_validate_and_dup_fd(const nv_cap_t *, int);
 void        NV_API_CALL  os_nv_cap_close_fd           (int);
 NvS32       NV_API_CALL  os_imex_channel_get          (NvU64);
 NvS32       NV_API_CALL  os_imex_channel_count        (void);
-void        NV_API_CALL  os_sprint_symbol             (char *, unsigned long);
 
 enum os_pci_req_atomics_type {
     OS_INTF_PCIE_REQ_ATOMICS_32BIT,

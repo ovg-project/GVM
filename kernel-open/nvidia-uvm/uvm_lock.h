@@ -796,18 +796,6 @@ typedef struct
 #define uvm_assert_rwsem_locked_write(uvm_sem) \
         uvm_assert_rwsem_locked_mode(uvm_sem, UVM_LOCK_FLAGS_MODE_EXCLUSIVE)
 
-#define uvm_check_rwsem_locked_mode(uvm_sem, flags) ({                               \
-        typeof(uvm_sem) _sem_ = (uvm_sem);                                            \
-        (rwsem_is_locked(&_sem_->sem) && uvm_check_locked(_sem_, (flags))); \
-    })
-
-#define uvm_check_rwsem_locked(uvm_sem) \
-        uvm_check_rwsem_locked_mode(uvm_sem, UVM_LOCK_FLAGS_MODE_ANY)
-#define uvm_check_rwsem_locked_read(uvm_sem) \
-        uvm_check_rwsem_locked_mode(uvm_sem, UVM_LOCK_FLAGS_MODE_SHARED)
-#define uvm_check_rwsem_locked_write(uvm_sem) \
-        uvm_check_rwsem_locked_mode(uvm_sem, UVM_LOCK_FLAGS_MODE_EXCLUSIVE)
-
 #define uvm_assert_rwsem_unlocked(uvm_sem) UVM_ASSERT(!rwsem_is_locked(&(uvm_sem)->sem))
 
 #define uvm_init_rwsem(uvm_sem, order) ({                   \
