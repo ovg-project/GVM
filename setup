@@ -1,0 +1,77 @@
+#!/bin/bash
+
+# Check argument count
+if [ "$#" -ne 1 ]; then
+	echo "Usage: $0 {llama.cpp|diffusion|llamafactory|vllm|sglang}"
+	exit 1
+fi
+
+case "$1" in
+	llama.cpp)
+		echo "Running llama.cpp logic..."
+		if [ ! -d "llama.cpp" ]; then
+			git clone https://github.com/ggml-org/llama.cpp.git
+		fi
+		pushd llama.cpp
+		cmake -B build -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=80 -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
+		cmake --build build --config Release -j 12
+		popd
+		;;
+	diffusion)
+		echo "Running diffusion logic..."
+		if [ ! -d "diffusion" ]; then
+			python3 -m venv diffusion
+		fi
+		source diffusion/bin/activate
+		pushd diffusion
+		pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu129
+		pip3 install diffusers
+		pip3 install transformers
+		pip3 install protobuf
+		pip3 install sentencepiece
+		pip3 install accelerate
+		popd
+		deactivate
+		;;
+	llamafactory)
+		echo "Running llamafactory logic..."
+		if [ ! -d "LLaMA-Factory" ]; then
+			python3 -m venv LLaMA-Factory
+		fi
+		source LLaMA-Factory/bin/activate
+		pushd LLaMA-Factory
+		pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu129
+		pip3 install llama-factory
+		popd
+		deactivate
+		;;
+	vllm)
+		echo "Running vllm logic..."
+		if [ ! -d "vllm" ]; then
+			python3 -m venv vllm
+		fi
+		source vllm/bin/activate
+		pushd vllm
+		pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu129
+		pip3 install vllm
+		popd
+		deactivate
+		;;
+	sglang)
+		echo "Running sglang logic..."
+		if [ ! -d "sglang" ]; then
+			python3 -m venv sglang
+		fi
+		source sglang/bin/activate
+		pushd sglang
+		pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu129
+		pip3 install sglang
+		popd
+		deactivate
+		;;
+	*)
+		echo "Invalid argument: $1"
+		echo "Usage: $0 {llama.cpp|diffusion|llamafactory|vllm|sglang}"
+		exit 1
+		;;
+esac
