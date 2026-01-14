@@ -99,13 +99,13 @@ echo 6000000000 | sudo tee /sys/kernel/debug/nvidia-uvm/processes/$diffuserpid/0
 Generate workloads for vllm:
 ```
 source vllm/bin/activate
-python -m vllm.bench \
-  --model meta-llama/Llama-3.2-3B \
-  --backend vllm \
-  --dataset synthetic \
-  --num-prompts 512 \
-  --prompt-length 256 \
-  --output-length 256
+vllm bench serve \
+    --model meta-llama/Llama-3.2-3B \
+    --dataset-name random \
+    --random-input-len 256 \
+    --random-output-len 256 \
+    --num-prompts 512 \
+    --request-rate 32
 ```
 
 Preempt diffuser for even higher vllm performance:
