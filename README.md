@@ -1,6 +1,7 @@
 # GVM
 GVM is an OS-level GPU virtualization layer which achieves hardware-like performance isolation while preserving the flexibility of software-based sharing
 GVM provides cgroup-like APIs for GPU applications so you can check and operate GPU applications like what you did on CPU applications.
+For details, please check [here](https://github.com/ovg-project/GVM/blob/main/assets/GVM__Arxiv_.pdf).
 
 | API                 | Description                                                                                |
 |:--------------------|:-------------------------------------------------------------------------------------------|
