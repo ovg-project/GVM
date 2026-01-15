@@ -1,7 +1,7 @@
 # GVM
 GVM is an OS-level GPU virtualization layer which achieves hardware-like performance isolation while preserving the flexibility of software-based sharing
 GVM provides cgroup-like APIs for GPU applications so you can check and operate GPU applications like what you did on CPU applications.
-For details, please check [here](https://github.com/ovg-project/GVM/blob/main/assets/GVM__Arxiv_.pdf).
+For details, please check [here](https://github.com/ovg-project/GVM/blob/main/assets/GVM_paper.pdf).
 
 | API                 | Description                                                                                |
 |:--------------------|:-------------------------------------------------------------------------------------------|
@@ -15,7 +15,7 @@ For details, please check [here](https://github.com/ovg-project/GVM/blob/main/as
 ## Performance
 The figure shows the performance benefits of GVM when colocating high priority task `vllm` and low priority task `diffusion` on A100-40G GPU.
 GVM can achieve **59x** better p99 TTFT in high priority task compared to second best baseline while still get the highert throughput on low priority task.
-![](./assets/vllm+diffusion_github_boyuan.png)
+![](./assets/vllm+diffusion.png)
 
 # Requirements
 1. [GVM NVIDIA GPU Driver](https://github.com/ovg-project/gvm-nvidia-driver-modules) installed
