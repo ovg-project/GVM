@@ -15,6 +15,7 @@ For details, please check [here](https://github.com/ovg-project/GVM/blob/main/as
 ## Performance
 The figure shows the performance benefits of GVM when colocating high priority task `vllm` and low priority task `diffusion` on A100-40G GPU.
 GVM can achieve **59x** better p99 TTFT in high priority task compared to second best baseline while still get the highert throughput on low priority task.
+Thanks to [@boyuan](https://github.com/boyuanjia1126) for decorating figure.
 ![](./assets/vllm+diffusion.png)
 
 # Requirements
