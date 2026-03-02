@@ -34,6 +34,8 @@ case "$1" in
 		wget https://github.com/ovg-project/GVM/releases/download/v0.0.0-diffusion/vidprom.txt
 		popd
 		deactivate
+		# Create output directory for logs
+		mkdir -p diffusion_outputs/diffusion
 		;;
 	llamafactory)
 		echo "Running llamafactory logic..."
