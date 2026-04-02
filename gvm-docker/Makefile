@@ -1,23 +1,35 @@
-.PHONY: build install test clean
+.PHONY: build build-daemon build-runc install test clean uninstall
 
-BINARY=gvm-runc
 INSTALL_PATH=/usr/local/bin
 
-build:
-	@echo "Building $(BINARY)..."
-	go build -o $(BINARY) main.go
+build: build-daemon build-runc
+
+build-daemon:
+	@echo "Building gvm-daemon..."
+	go build -o gvm-daemon ./cmd/gvm-daemon/
+
+build-runc:
+	@echo "Building gvm-runc..."
+	go build -o gvm-runc ./cmd/gvm-runc/
 
 install: build
-	@echo "Installing $(BINARY) to $(INSTALL_PATH)..."
-	sudo cp $(BINARY) $(INSTALL_PATH)/$(BINARY)
-	sudo chmod +x $(INSTALL_PATH)/$(BINARY)
+	@echo "Installing binaries to $(INSTALL_PATH)..."
+	sudo cp gvm-daemon $(INSTALL_PATH)/gvm-daemon
+	sudo cp gvm-runc $(INSTALL_PATH)/gvm-runc
+	sudo chmod +x $(INSTALL_PATH)/gvm-daemon $(INSTALL_PATH)/gvm-runc
+	@echo ""
 	@echo "Installation complete!"
 	@echo ""
-	@echo "To configure Docker, add this to /etc/docker/daemon.json:"
+	@echo "=== GVM Docker Daemon ==="
+	@echo "Start the daemon:"
+	@echo "  sudo gvm-daemon"
+	@echo ""
+	@echo "=== GVM Runc Wrapper (alternative) ==="
+	@echo "Add this to /etc/docker/daemon.json:"
 	@echo '{'
 	@echo '  "runtimes": {'
 	@echo '    "gvm": {'
-	@echo '      "path": "$(INSTALL_PATH)/$(BINARY)"'
+	@echo '      "path": "$(INSTALL_PATH)/gvm-runc"'
 	@echo '    }'
 	@echo '  }'
 	@echo '}'
@@ -30,8 +42,8 @@ test:
 
 clean:
 	@echo "Cleaning..."
-	rm -f $(BINARY)
+	rm -f gvm-daemon gvm-runc
 
 uninstall:
-	@echo "Uninstalling $(BINARY)..."
-	sudo rm -f $(INSTALL_PATH)/$(BINARY)
+	@echo "Uninstalling..."
+	sudo rm -f $(INSTALL_PATH)/gvm-daemon $(INSTALL_PATH)/gvm-runc
