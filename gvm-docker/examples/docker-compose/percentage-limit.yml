@@ -1,0 +1,30 @@
+# Percentage-based memory limit example.
+#
+# Uses GVM_MEMORY_PERCENTAGE to set memory limit as a fraction of total GPU memory.
+# This is portable across different GPU models (e.g., 50% of an A100 = 40GB,
+# 50% of an L4 = 12GB).
+#
+# Usage:
+#   docker compose -f percentage-limit.yml up -d
+#
+# Prerequisites:
+#   - GVM kernel modules loaded
+#   - gvm-daemon running on host (sudo gvm-daemon)
+#   - NVIDIA Container Toolkit installed
+
+version: "3.8"
+
+services:
+  gpu-app:
+    image: nvidia/cuda:12.2.0-runtime-ubuntu22.04
+    command: ["sleep", "infinity"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      GVM_MEMORY_PERCENTAGE: "50"
+      GVM_COMPUTE_PRIORITY: "8"

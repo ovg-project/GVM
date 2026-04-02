@@ -1,0 +1,36 @@
+# Multi-GPU service with per-device memory limits.
+#
+# This example shows how to set different memory limits on each GPU
+# for a distributed training workload.
+#
+# Usage:
+#   docker compose -f multi-gpu.yml up -d
+#
+# Prerequisites:
+#   - GVM kernel modules loaded
+#   - gvm-daemon running on host (sudo gvm-daemon)
+#   - NVIDIA Container Toolkit installed
+#   - At least 2 GPUs available
+
+version: "3.8"
+
+services:
+  distributed-training:
+    image: nvidia/cuda:12.2.0-runtime-ubuntu22.04
+    command: ["sleep", "infinity"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 2
+              capabilities: [gpu]
+    environment:
+      GVM_MEMORY_LIMIT_0: "20g"
+      GVM_MEMORY_LIMIT_1: "20g"
+      GVM_COMPUTE_PRIORITY: "5"
+    volumes:
+      - training-data:/data
+
+volumes:
+  training-data:

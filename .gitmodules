@@ -1,6 +1,6 @@
 [submodule "gvm-nvidia-driver-modules"]
 	path = gvm-nvidia-driver-modules
-	url = git@github.com:ovg-project/gvm-nvidia-driver-modules.git
+	url = https://github.com/ovg-project/gvm-nvidia-driver-modules.git
 [submodule "gvm-cuda-driver"]
 	path = gvm-cuda-driver
-	url = git@github.com:ovg-project/gvm-cuda-driver.git
+	url = https://github.com/ovg-project/gvm-cuda-driver.git

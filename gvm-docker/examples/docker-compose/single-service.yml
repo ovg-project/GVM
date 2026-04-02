@@ -1,0 +1,26 @@
+# Single GPU service with GVM memory and priority controls.
+#
+# Usage:
+#   docker compose -f single-service.yml up -d
+#
+# Prerequisites:
+#   - GVM kernel modules loaded
+#   - gvm-daemon running on host (sudo gvm-daemon)
+#   - NVIDIA Container Toolkit installed
+
+version: "3.8"
+
+services:
+  gpu-app:
+    image: nvidia/cuda:12.2.0-runtime-ubuntu22.04
+    command: ["nvidia-smi", "-l", "5"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      GVM_MEMORY_LIMIT: "6g"
+      GVM_COMPUTE_PRIORITY: "8"

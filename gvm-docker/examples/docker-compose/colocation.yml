@@ -1,0 +1,55 @@
+# GPU workload colocation: high-priority inference + low-priority training.
+#
+# The inference server gets priority 2 (high) and 16GB memory.
+# The training job gets priority 12 (low) and 8GB memory.
+# GVM's kernel scheduler ensures inference latency is protected.
+#
+# Usage:
+#   docker compose -f colocation.yml up -d
+#
+# Prerequisites:
+#   - GVM kernel modules loaded
+#   - gvm-daemon running on host (sudo gvm-daemon)
+#   - NVIDIA Container Toolkit installed
+
+version: "3.8"
+
+services:
+  # High-priority inference server
+  inference:
+    image: nvidia/cuda:12.2.0-runtime-ubuntu22.04
+    command: ["sleep", "infinity"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      GVM_MEMORY_LIMIT: "16g"
+      GVM_COMPUTE_PRIORITY: "2"
+    ports:
+      - "8000:8000"
+
+  # Low-priority batch training
+  training:
+    image: nvidia/cuda:12.2.0-runtime-ubuntu22.04
+    command: ["sleep", "infinity"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      GVM_MEMORY_LIMIT: "8g"
+      GVM_COMPUTE_PRIORITY: "12"
+    volumes:
+      - training-data:/data
+      - training-checkpoints:/checkpoints
+
+volumes:
+  training-data:
+  training-checkpoints:
